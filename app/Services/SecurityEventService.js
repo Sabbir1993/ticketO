@@ -6,7 +6,7 @@ const Redactor = use('App/Security/Redactor');
 const IpResolver = use('App/Security/IpResolver');
 
 const CRITICAL = new Set(['audit_chain_broken', 'secret_rotated', 'permission_escalation_attempt', 'gateway_misconfigured']);
-const WARNING = new Set(['login_failed', 'otp_failed', 'mfa_failed', 'permission_denied', 'csrf_failed', 'rate_limited', 'block_hit', 'payment_validation_failed', 'invalid_ticket_scan', 'payment_high_risk']);
+const WARNING = new Set(['login_failed', 'otp_failed', 'mfa_failed', 'permission_denied', 'csrf_failed', 'rate_limited', 'block_hit', 'payment_validation_failed', 'invalid_ticket_scan', 'payment_high_risk', 'password_link_invalid']);
 
 const SecurityEventService = {
     /**

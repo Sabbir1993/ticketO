@@ -9,6 +9,7 @@ import VenueMap from '@/components/venue/VenueMap';
 import LayoutDesigner, { checkSpec } from '@/components/venue/LayoutDesigner';
 import { HomeSection, SORTS } from '@/pages/customer/Home';
 import { applyTheme } from '@/lib/theme';
+import { StaffUsers, RolesPermissions } from '@/pages/admin/Access';
 import { Loading, Empty } from '@/components/States';
 import { blockCapacity } from '@shared/templates.mjs';
 import { api } from '@/lib/api';
@@ -19,7 +20,7 @@ export default function AdminConsole() {
   const { user, checked, signOut } = useStore();
   const nav = useNavigate();
   const { pathname } = useLocation();
-  const can = (p) => !!user?.superAdmin || !!user?.permissions?.includes(p);
+  const can = (p) => !!user?.superAdmin || [].concat(p).some((x) => user?.permissions?.includes(x));
   const ov = useApi(() => (user?.role === 'admin' && can('cms.dashboard.view') ? api.adminOverview() : null), [user?.id, pathname]);
   if (!checked) return <Loading />;
   if (!user || user.role !== 'admin') return <Navigate to={`/partner/login?next=${encodeURIComponent(pathname)}`} replace />;
@@ -39,6 +40,9 @@ export default function AdminConsole() {
     { id: 'venues', label: 'Venues', icon: 'MapPin', perm: 'venues.manage' },
     { id: 'payments', label: 'Payment gateways', icon: 'Plug', perm: 'gateways.manage' },
     { id: 'promos', label: 'Promo codes', icon: 'Tag', perm: 'promos.manage' },
+    { section: 'Access control' },
+    { id: 'users', label: 'Staff users', icon: 'Users', perm: ['users.view', 'users.manage'] },
+    { id: 'roles', label: 'Roles & permissions', icon: 'KeyRound', perm: 'roles.manage' },
     { section: 'Compliance' },
     { id: 'audit', label: 'Audit log', icon: 'History', perm: 'audit.view' },
   ];
@@ -46,7 +50,7 @@ export default function AdminConsole() {
   const NAV = ALL.filter((n) => n.section || can(n.perm)).filter((n, i, a) => !n.section || (a[i + 1] && !a[i + 1].section));
   const active = pathname.replace(/^\/admin\/?/, '').split('/')[0];
   return (
-    <PortalShell title="Super admin" subtitle="Platform administrator" user={user.email} nav={NAV} active={active} onNav={(id) => nav(`/admin${id ? `/${id}` : ''}`)}
+    <PortalShell title="Admin console" subtitle={user.superAdmin ? 'Super Admin' : (user.roles || []).join(', ') || 'Platform staff'} user={user.email} nav={NAV} active={active} onNav={(id) => nav(`/admin${id ? `/${id}` : ''}`)}
       actions={<button onClick={() => { signOut(); nav('/'); }} className="btn-ghost h-9 px-3 text-sm"><Icon name="LogOut" size={15} />Sign out</button>}>
       <Routes>
         <Route index element={<Overview data={ov.data} allowed={can('cms.dashboard.view')} />} />
@@ -62,6 +66,8 @@ export default function AdminConsole() {
         <Route path="payments" element={<Payments />} />
         <Route path="promos" element={<Promos />} />
         <Route path="audit" element={<Audit />} />
+        <Route path="users" element={<StaffUsers />} />
+        <Route path="roles" element={<RolesPermissions />} />
       </Routes>
     </PortalShell>
   );

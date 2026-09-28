@@ -15,6 +15,7 @@ import Login from '@/pages/customer/Login';
 import Profile from '@/pages/customer/Profile';
 import { Offers, Help, NotFound } from '@/pages/customer/Misc';
 import PartnerLogin from '@/pages/merchant/PartnerLogin';
+import SetPassword from '@/pages/merchant/SetPassword';
 import Register from '@/pages/merchant/Register';
 import MerchantPortal from '@/pages/merchant/Portal';
 import AdminConsole from '@/pages/admin/Admin';
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="offers" element={<Offers />} />
             <Route path="help" element={<Help />} />
             <Route path="partner/login" element={<PartnerLogin />} />
+            <Route path="partner/set-password" element={<SetPassword />} />
             <Route path="merchant/register" element={<Register />} />
             <Route path="*" element={<NotFound />} />
           </Route>

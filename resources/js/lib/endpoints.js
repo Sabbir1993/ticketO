@@ -63,6 +63,16 @@ export const ROUTES = [
   ['adminOrders', 'GET', '/admin/orders', ['admin']],
   ['reviewRefund', 'POST', '/orders/:orderId/refund-review', ['admin', 'merchant']],
   ['auditLog', 'GET', '/admin/audit', ['admin']],
+  ['staffUsers', 'GET', '/admin/users', ['admin']],
+  ['inviteStaff', 'POST', '/admin/users', ['admin']],
+  ['updateStaff', 'PATCH', '/admin/users/:id', ['admin']],
+  ['resetStaffAccess', 'POST', '/admin/users/:id/reset-access', ['admin']],
+  ['staffRoles', 'GET', '/admin/roles', ['admin']],
+  ['staffRole', 'GET', '/admin/roles/:id', ['admin']],
+  ['permissionCatalogue', 'GET', '/admin/permissions', ['admin']],
+  ['saveStaffRole', 'PUT', '/admin/roles', ['admin']],
+  ['deleteStaffRole', 'DELETE', '/admin/roles/:id', ['admin']],
+  ['setStaffPassword', 'POST', '/auth/password/setup', null],
 ].map(([name, method, path, roles]) => ({ name, method, path, roles }));
 
 

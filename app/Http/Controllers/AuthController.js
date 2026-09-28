@@ -43,6 +43,11 @@ class AuthController extends Controller {
     }
 
     // POST /api/auth/otp/verify { phone, otp } — step 2; sets the session cookies.
+    async setPassword(req, res) {
+        res.header('Cache-Control', 'no-store');
+        return res.json(await use('App/Services/Cms/StaffAdminService').setPassword(req.ctx, req.only(['token', 'password'])));
+    }
+
     async otpVerify(req, res) {
         const r = await CustomerAuthService.verifyOtp(req.ctx, res.res, req.only(['phone', 'otp']));
         res.header('Cache-Control', 'no-store');

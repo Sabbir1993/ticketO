@@ -18,6 +18,8 @@ Route.get('/events/{slug}', 'EventController@show');
 Route.post('/auth/login', 'AuthController@login').middleware(['block:login', 'throttle:10,15']);
 Route.post('/auth/mfa', 'AuthController@mfa').middleware(['block:login', 'throttle:6,5,user']);
 Route.post('/auth/logout', 'AuthController@logout');
+// Staff set their own password from the one-time invite / reset link (only its hash is stored).
+Route.post('/auth/password/setup', 'AuthController@setPassword').middleware(['block:login', 'throttle:10,15']);
 
 // Customer sign-in by SMS code. IP- and phone-throttled on top of the per-phone cooldown in the service;
 // wrong codes feed the otp_failed auto-block rules.
@@ -55,6 +57,16 @@ Route.group({ prefix: '/admin', middleware: ['auth:cms'] }, () => {
     Route.get('/orders', 'CmsController@orders').middleware(['permission:orders.view']);
     Route.get('/audit', 'CmsController@audit').middleware(['permission:audit.view']);
     Route.get('/kyc/{docId}', 'UploadController@kycDocument').middleware(['permission:kyc.documents.view']);
+    // Staff users & roles (escalation guards in StaffAdminService / RbacService)
+    Route.get('/users', 'CmsController@staffUsers').middleware(['permission:users.view,users.manage']);
+    Route.post('/users', 'CmsController@inviteStaff').middleware(['permission:users.manage', 'throttle:20,10,user']);
+    Route.patch('/users/{id}', 'CmsController@updateStaff').middleware(['permission:users.manage']);
+    Route.post('/users/{id}/reset-access', 'CmsController@resetStaffAccess').middleware(['permission:users.manage', 'throttle:10,10,user']);
+    Route.get('/roles', 'CmsController@roles').middleware(['permission:roles.manage,users.view,users.manage']);
+    Route.get('/roles/{id}', 'CmsController@role').middleware(['permission:roles.manage']);
+    Route.get('/permissions', 'CmsController@permissions').middleware(['permission:roles.manage']);
+    Route.put('/roles', 'CmsController@saveRole').middleware(['permission:roles.manage']);
+    Route.delete('/roles/{id}', 'CmsController@deleteRole').middleware(['permission:roles.manage']);
 });
 
 // Seat holds (seat map → checkout). Checkout-scope blocks apply; creation and promo checks are rate limited.

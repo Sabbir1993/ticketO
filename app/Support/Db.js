@@ -27,7 +27,10 @@ function pool() {
 
 /** DB.transaction that also propagates to models outside an HTTP request. */
 function transaction(fn) {
-    return HttpContext.get() ? DB.transaction(fn) : HttpContext.run({}, () => DB.transaction(fn));
+    // Re-entrant: inside an open transaction, just join it (the vendor cannot nest transactions).
+    const store = HttpContext.get();
+    if (store?.transactions?.[manager().getDefaultConnection()]) return fn();
+    return store ? DB.transaction(fn) : HttpContext.run({}, () => DB.transaction(fn));
 }
 
 /** Separate connection + transaction; models inside use it. Commits independently of the caller. */
