@@ -11,7 +11,9 @@ import { useStore } from '@/lib/store';
 export default function PartnerLogin() {
   const { signIn, toast, user, checked } = useStore();
   const nav = useNavigate();
-  const next = useSearchParams()[0].get('next');
+  const [sp] = useSearchParams();
+  const next = sp.get('next');
+  const switching = sp.get('switch') === '1'; // from a 'no access' page: stay here to sign in as someone else
   const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
   const [f, setF] = useState({ email: '', password: '' });
   const [mfa, setMfa] = useState(null); // null | { mode: 'verify' } | { mode: 'enroll', otpauthUrl, secret }
@@ -19,7 +21,10 @@ export default function PartnerLogin() {
   const [busy, setBusy] = useState(false);
 
   const homeOf = (u) => (u.role === 'admin' ? '/admin' : '/merchant');
-  const done = (r) => { signIn(r); nav(safeNext || homeOf(r.user), { replace: true }); };
+  // Server-rendered pages (not part of the SPA router) need a full page load.
+  const isServerPage = (to) => to === '/logs' || to.startsWith('/logs?') || to.startsWith('/logs/');
+  const go = (to) => (isServerPage(to) ? window.location.assign(to) : nav(to, { replace: true }));
+  const done = (r) => { signIn(r); go(safeNext || homeOf(r.user)); };
   const submit = async (e) => {
     e?.preventDefault(); setBusy(true);
     try {
@@ -37,7 +42,10 @@ export default function PartnerLogin() {
   };
 
   // Already signed in as staff: go to the requested page, or this account's workspace.
-  if (checked && user && user.role !== 'customer' && !mfa) return <Navigate to={safeNext || homeOf(user)} replace />;
+  if (checked && user && user.role !== 'customer' && !mfa && !switching) {
+    if (safeNext && isServerPage(safeNext)) { window.location.replace(safeNext); return null; }
+    return <Navigate to={safeNext || homeOf(user)} replace />;
+  }
 
   return (
     <div className="flex min-h-[75vh] items-center justify-center bg-ink-50/70 px-4 py-10">
