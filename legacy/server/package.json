@@ -1,0 +1,17 @@
+{
+  "name": "ticketo-server",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Ticketo API — Node.js/Express, SSLCOMMERZ & bKash payment gateways",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "seed": "node src/seed.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

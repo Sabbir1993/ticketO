@@ -1,0 +1,15 @@
+node_modules
+.env
+.env.*
+!.env.example
+public/build
+storage/app/*
+!storage/app/.gitkeep
+storage/framework/*
+storage/logs/*
+*.log
+.DS_Store
+legacy/**/node_modules
+legacy/server/data
+legacy/server/uploads
+legacy/server/.env

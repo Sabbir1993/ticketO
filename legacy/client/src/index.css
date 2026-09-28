@@ -1,0 +1,69 @@
+@tailwind base;
+
+/* Theme tokens — SSL Wireless defaults; overwritten at runtime from Admin → Branding */
+:root {
+  --brand-50: 242 244 249;
+  --brand-100: 226 230 241;
+  --brand-200: 196 204 227;
+  --brand-300: 160 173 210;
+  --brand-400: 104 124 182;
+  --brand-500: 45 73 154;
+  --brand-600: 39 63 132;
+  --brand-700: 32 53 111;
+  --brand-800: 26 42 89;
+  --brand-900: 20 32 68;
+  --accent-50: 254 243 244;
+  --accent-100: 253 226 228;
+  --accent-200: 250 198 202;
+  --accent-300: 247 163 169;
+  --accent-400: 243 107 117;
+  --accent-500: 238 50 64;
+  --accent-600: 205 43 55;
+  --accent-700: 171 36 46;
+  --accent-800: 138 29 37;
+  --accent-900: 105 22 28;
+  --radius: 12px;
+    --dark: 15 23 42;
+}
+
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-white font-sans text-ink-900 antialiased; }
+  input, select, textarea { @apply bg-transparent; }
+}
+
+@layer components {
+  .container-x { @apply mx-auto w-full max-w-[1240px] px-4 md:px-6; }
+  .btn { @apply inline-flex items-center justify-center gap-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50; border-radius: calc(var(--radius) - 2px); }
+  .btn-primary { @apply btn bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700; }
+  .btn-dark { @apply btn bg-ink-800 text-white hover:bg-ink-900; }
+  .btn-outline { @apply btn border border-ink-100 bg-white text-ink-800 hover:border-ink-300; }
+  .btn-ghost { @apply btn text-ink-700 hover:bg-ink-50; }
+  .chip { @apply rounded-full border border-ink-100 px-3 py-1 text-sm text-ink-700 transition hover:border-brand-400 hover:text-brand-500; }
+  .chip-on { @apply border-brand-500 bg-brand-500 text-white hover:text-white; }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[.14em] text-brand-500; }
+  .card { @apply border border-ink-100 bg-white; border-radius: calc(var(--radius) + 4px); }
+  .input { @apply h-11 w-full rounded-lg border border-ink-300/70 px-3 text-[15px] outline-none transition placeholder:text-ink-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-100; }
+  .label { @apply mb-1.5 block text-sm font-medium text-ink-700; }
+  .badge { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium; }
+  .th { @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-500; }
+  .td { @apply px-4 py-3 text-sm; }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
+
+@media print {
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
+  .print-area { position: absolute; left: 0; top: 0; width: 80mm; padding: 4mm; }
+  .no-print { display: none !important; }
+}
+
+.vm-block:hover, .vm-block:focus-visible { fill-opacity: 1; stroke: #1f2030; outline: none; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
