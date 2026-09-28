@@ -33,6 +33,12 @@ async function readJson(res) {
     try { return JSON.parse(text); } catch { throw new Error(`Unexpected response from SSLCOMMERZ (HTTP ${res.status})`); }
 }
 
+// Gateway calls go to storage/logs (laranode.log). Never the password; the Store ID only masked.
+const maskId = (id) => { const v = String(id || ''); return v.length > 6 ? `${v.slice(0, 3)}…${v.slice(-2)} (${v.length} chars)` : `${'•'.repeat(v.length)} (${v.length} chars)`; };
+function log(level, message, context) {
+    try { use('laranode/Support/Facades/Log')[level](`[sslcommerz] ${message}`, { mode: mode(), ...context }); } catch { /* logging must never break a payment */ }
+}
+
 const md5 = (s) => crypto.createHash('md5').update(String(s), 'utf8').digest('hex');
 
 const SslcommerzGateway = {
@@ -60,8 +66,13 @@ const SslcommerzGateway = {
             method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
             body: new URLSearchParams(params), signal: AbortSignal.timeout(TIMEOUT_MS),
         });
-        const r = await readJson(res);
-        if (String(r.status).toUpperCase() !== 'SUCCESS' || !r.GatewayPageURL) throw new Error(r.failedreason || 'Could not create payment session');
+        let r;
+        try { r = await readJson(res); } catch (e) { log('error', 'init: unreadable response', { endpoint: endpoints().initUrl, tran_id: tranId, store: maskId(creds.storeId), http: res.status }); throw e; }
+        if (String(r.status).toUpperCase() !== 'SUCCESS' || !r.GatewayPageURL) {
+            log('warning', 'init rejected', { endpoint: endpoints().initUrl, tran_id: tranId, store: maskId(creds.storeId), amount: total.toFixed(2), http: res.status, status: r.status || null, failedreason: r.failedreason || null });
+            throw new Error(r.failedreason || 'Could not create payment session');
+        }
+        log('info', 'init ok', { tran_id: tranId, store: maskId(creds.storeId), amount: total.toFixed(2) });
         return { url: r.GatewayPageURL, sessionKey: r.sessionkey || null };
     },
 
@@ -71,6 +82,7 @@ const SslcommerzGateway = {
         const res = await fetch(`${endpoints().validationUrl}?${q}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
         const r = await readJson(res);
         const status = String(r.status || r.APIConnect || '').toUpperCase();
+        log(status === 'VALID' || status === 'VALIDATED' ? 'info' : 'warning', 'validation', { val_id: valId, store: maskId(creds.storeId), http: res.status, status, tran_id: r.tran_id || null, amount: r.amount || null, risk_level: r.risk_level ?? null });
         return {
             valid: status === 'VALID' || status === 'VALIDATED', status, tranId: r.tran_id, orderRef: r.value_a || null,
             amount: Number(r.currency_amount ?? r.amount), currency: r.currency_type || r.currency,
@@ -106,6 +118,7 @@ const SslcommerzGateway = {
             return { ok: true, mode: mode(), message: `Connected — the SSLCOMMERZ ${mode()} store accepted the credentials.` };
         } catch (e) {
             const why = e.name === 'TimeoutError' ? 'no response within 20 s' : String(e.message).slice(0, 160);
+            if (e.name === 'TimeoutError' || !/rejected|credential|de-?active/i.test(why)) log('error', 'connection test failed', { store: maskId(creds.storeId), error: why });
             const hint = /credential|de-?active/i.test(why) ? ` Check the Store ID / password, and that it is a ${mode()} store (${mode() === 'sandbox' ? 'sandbox' : 'live'} URLs are set in SSLCZ_INIT_URL / SSLCZ_VALIDATION_URL).` : '';
             return { ok: false, mode: mode(), message: `SSLCOMMERZ (${mode()}) rejected the request: ${why}.${hint}` };
         }

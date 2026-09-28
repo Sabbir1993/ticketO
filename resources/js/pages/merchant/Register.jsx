@@ -22,7 +22,7 @@ export default function Register() {
   const [biz, setBiz] = useState({ name: '', type: TYPES[0], legalName: '', tradeLicense: '', tin: '', bin: '', address: '', website: '' });
   const [docs, setDocs] = useState({});
   const [settle, setSettle] = useState({ type: 'bank', bankName: '', accountName: '', accountNo: '', routing: '', wallet: '' });
-  const [pg, setPg] = useState({ mode: 'platform', sslcommerz: { sandbox: true }, bkash: { sandbox: true } });
+  const [pg, setPg] = useState({ sslcommerz: {}, bkash: {} });
   const [agree, setAgree] = useState(false);
 
   const valid = [
@@ -30,7 +30,7 @@ export default function Register() {
     biz.name.trim() && biz.tradeLicense.trim(),
     !!docs['Trade licence'] && !!docs['Owner NID / passport'],
     settle.type === 'bank' ? settle.bankName && settle.accountName && settle.accountNo : /^01[3-9]\d{8}$/.test(settle.wallet),
-    pg.mode === 'platform' || (pg.sslcommerz?.storeId && pg.sslcommerz?.storePassword),
+    !pg.sslcommerz?.storeId === !pg.sslcommerz?.storePassword, // optional now (needed before the first event goes live), but both or neither
     agree,
   ];
   const next = () => (valid[step] ? setStep(step + 1) : toast('Please complete the required fields', 'err'));
@@ -97,7 +97,7 @@ export default function Register() {
               ) : <Field id="s-w" label="Merchant wallet number *"><input id="s-w" className="input" value={settle.wallet} onChange={(e) => setSettle({ ...settle, wallet: e.target.value.replace(/\D/g, '').slice(0, 11) })} placeholder="01XXXXXXXXX" /></Field>}
               <p className="text-xs text-ink-500">Used for payouts when Ticketo collects on your behalf, and for refunds adjustments.</p>
             </>)}
-            {step === 4 && <PgForm value={pg} onChange={setPg} allowDirect={config.platform.allowMerchantDirectPG} />}
+            {step === 4 && <PgForm value={pg} onChange={setPg} />}
             {step === 5 && (
               <div className="space-y-4 text-sm">
                 <dl className="grid grid-cols-[150px_1fr] gap-y-2">
@@ -105,7 +105,7 @@ export default function Register() {
                   <dt className="text-ink-500">Business</dt><dd>{biz.name} ({biz.type}) · TL {biz.tradeLicense}</dd>
                   <dt className="text-ink-500">Documents</dt><dd>{Object.keys(docs).join(', ') || '—'}</dd>
                   <dt className="text-ink-500">Settlement</dt><dd>{settle.type === 'bank' ? `${settle.bankName} · ${settle.accountNo}` : `Wallet ${settle.wallet}`}</dd>
-                  <dt className="text-ink-500">Collection</dt><dd>{pg.mode === 'direct' ? `Direct — SSLCOMMERZ store "${pg.sslcommerz.storeId}" (${pg.sslcommerz.sandbox !== false ? 'sandbox' : 'live'})` : `Ticketo collects · ${config.platform.merchantAutoApprove ? '' : 'weekly payouts'}`}</dd>
+                  <dt className="text-ink-500">Collection</dt><dd>{pg.sslcommerz?.storeId ? `Default SSLCOMMERZ store "${pg.sslcommerz.storeId}"` : 'Set your store later (Settings → Payment gateway, or per event)'}</dd>
                 </dl>
                 <label className="flex items-start gap-2 rounded-xl bg-ink-50 p-4"><input type="checkbox" className="mt-0.5 accent-brand-500" checked={agree} onChange={(e) => setAgree(e.target.checked)} /><span>I agree to the Ticketo merchant agreement: commission of {config.platform.defaultCommissionPct ?? 8}% on ticket value (negotiable), customer convenience fee of {config.platform.convenienceFeePct}% + VAT, and responsibility for event delivery and refunds per my published policy.</span></label>
               </div>

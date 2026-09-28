@@ -17,7 +17,8 @@ export default function Profile() {
   const [sp, setSp] = useSearchParams();
   const tab = sp.get('tab') || 'bookings';
   const { user, checked } = useStore();
-  if (checked && (!user || user.role !== 'customer')) return tab === 'rewards' || tab === 'wishlist' ? <Shell tab={tab} setSp={setSp} user={user} /> : <Navigate to={`/login?next=${encodeURIComponent(`/profile?tab=${tab}`)}`} replace />;
+  if (checked && user && user.role !== 'customer') return <Navigate to="/login" replace />; // staff: explains there are no customer pages
+  if (checked && !user) return tab === 'rewards' || tab === 'wishlist' ? <Shell tab={tab} setSp={setSp} user={user} /> : <Navigate to={`/login?next=${encodeURIComponent(`/profile?tab=${tab}`)}`} replace />;
   return <Shell tab={tab} setSp={setSp} user={user} />;
 }
 

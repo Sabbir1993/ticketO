@@ -160,27 +160,27 @@ function Settlement() {
 }
 
 function Payments() {
-  const { merchant, setMerchant, config, toast } = useStore();
-  const [pg, setPg] = useState(() => ({ mode: merchant?.pg?.mode || 'platform', sslcommerz: { sandbox: true, ...(merchant?.pg?.sslcommerz || {}) }, bkash: { sandbox: true, ...(merchant?.pg?.bkash || {}) } }));
+  const { merchant, setMerchant, toast } = useStore();
+  const [pg, setPg] = useState(() => ({ sslcommerz: { ...(merchant?.pg?.sslcommerz || {}) }, bkash: { ...(merchant?.pg?.bkash || {}) } }));
   const [busy, setBusy] = useState(false);
   const [test, setTest] = useState(null);
   const save = async () => { setBusy(true); try { const m = await api.updatePaymentSettings(pg); setMerchant(m); toast('Payment settings saved'); setPg((p) => ({ ...p, sslcommerz: { ...p.sslcommerz, storePassword: m.pg?.sslcommerz?.storePassword || '' } })); } catch (e) { toast(e.message, 'err'); } finally { setBusy(false); } };
-  const run = async (gateway) => { setTest({ loading: true }); try { const r = await api.testPaymentConnection({ gateway }); setTest(r); const me = await api.me(); setMerchant(me.merchant); } catch (e) { setTest({ ok: false, message: e.message }); } };
+  const run = async (gateway) => { setTest({ loading: true }); try { const r = await api.testPaymentConnection({ gateway }); setTest(r); const me = await api.me(); setMerchant(me.merchant); setPg((p) => ({ ...p, sslcommerz: { ...p.sslcommerz, verifiedAt: me.merchant?.pg?.sslcommerz?.verifiedAt || null } })); } catch (e) { setTest({ ok: false, message: e.message }); } };
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <Panel title="How customers pay you">
+      <Panel title="Default payment store">
         <div className="space-y-5 p-5">
-          <PgForm value={pg} onChange={setPg} allowDirect={config.platform.allowMerchantDirectPG} merchant={merchant} />
+          <PgForm value={pg} onChange={setPg} />
           <div className="flex flex-wrap gap-2 border-t border-ink-100 pt-4">
             <button onClick={save} disabled={busy} className="btn-primary h-10 px-5"><Icon name="Save" size={15} />Save</button>
-            {pg.mode === 'direct' && <button onClick={() => run('sslcommerz')} className="btn-outline h-10 px-5"><Icon name="Plug" size={15} />Test SSLCOMMERZ connection</button>}
-            {pg.mode === 'direct' && pg.bkash?.appKey && <button onClick={() => run('bkash')} className="btn-outline h-10 px-5">Test bKash</button>}
+            {merchant?.pg?.sslcommerz?.storeId && <button onClick={() => run('sslcommerz')} className="btn-outline h-10 px-5"><Icon name="Plug" size={15} />Test SSLCOMMERZ connection</button>}
+            {merchant?.pg?.bkash?.appKey && <button onClick={() => run('bkash')} className="btn-outline h-10 px-5">Test bKash</button>}
           </div>
           {test && <div className={`rounded-xl p-3 text-sm ${test.loading ? 'bg-ink-50' : test.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-brand-50 text-brand-700'}`}>{test.loading ? 'Contacting gateway…' : test.message}</div>}
         </div>
       </Panel>
       <aside className="space-y-4 text-sm">
-        <div className="card p-5"><h3 className="font-semibold">Payment flow</h3><ol className="mt-3 list-decimal space-y-2 pl-5 text-ink-700"><li>Customer picks seats → seats are held.</li><li>Ticketo creates a session on <b>{pg.mode === 'direct' ? 'your' : 'Ticketo’s'}</b> gateway account.</li><li>Customer pays on the gateway page (card / bKash / Nagad / bank).</li><li>Gateway redirects back; Ticketo validates the transaction server-to-server (amount, tran_id, status).</li><li>Tickets are issued and seats locked.</li></ol></div>
+        <div className="card p-5"><h3 className="font-semibold">Payment flow</h3><ol className="mt-3 list-decimal space-y-2 pl-5 text-ink-700"><li>Customer picks seats → seats are held.</li><li>Ticketo creates a session on <b>your</b> store — the event’s own store if it has one, otherwise this default.</li><li>Customer pays on the gateway page (card / bKash / Nagad / bank).</li><li>Gateway redirects back; Ticketo validates the transaction server-to-server (amount, tran_id, status).</li><li>Tickets are issued and seats locked.</li></ol></div>
         <div className="card p-5"><h3 className="font-semibold">Need a gateway account?</h3><p className="mt-2 text-ink-700">Apply for an SSLCOMMERZ merchant store, or bKash PGW (tokenized checkout). Use sandbox credentials first, then switch to live.</p></div>
       </aside>
     </div>

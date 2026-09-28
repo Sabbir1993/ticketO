@@ -51,7 +51,6 @@ Route.group({ prefix: '/admin', middleware: ['auth:cms'] }, () => {
     Route.post('/events/{id}/review', 'CmsController@reviewEvent').middleware(['permission:events.approve']);
     Route.get('/config', 'CmsController@config').middleware([CONFIG_PERMS]);
     Route.put('/config/{section}', 'CmsController@updateConfig').middleware([CONFIG_PERMS]);
-    Route.post('/config/gateways/{gateway}/test', 'CmsController@testGateway').middleware(['permission:gateways.manage', 'throttle:10,10,user']);
     Route.put('/venues', 'CmsController@saveVenue').middleware(['permission:venues.manage']);
     Route.get('/orders', 'CmsController@orders').middleware(['permission:orders.view']);
     Route.get('/audit', 'CmsController@audit').middleware(['permission:audit.view']);
@@ -89,6 +88,8 @@ Route.group({ prefix: '/merchant', middleware: ['auth:merchant', 'merchant'] }, 
     Route.get('/events', 'MerchantController@events').middleware(['permission:merchant.events.manage,merchant.dashboard.view,pos.sell,gate.scan']);
     Route.post('/events', 'MerchantController@saveEvent').middleware(['permission:merchant.events.manage', 'throttle:60,1,user']);
     Route.get('/events/{id}', 'MerchantController@event').middleware(['permission:merchant.events.manage']);
+    Route.put('/events/{id}/payment', 'MerchantController@eventPayment').middleware(['permission:merchant.gateway.manage']);
+    Route.post('/events/{id}/payment/test', 'MerchantController@testEventPayment').middleware(['permission:merchant.gateway.manage', 'throttle:10,10,user']);
     Route.post('/events/{id}/publish', 'MerchantController@publish').middleware(['permission:merchant.events.publish']);
     Route.post('/events/{id}/status', 'MerchantController@status').middleware(['permission:merchant.events.publish']);
     Route.delete('/events/{id}', 'MerchantController@destroy').middleware(['permission:merchant.events.manage']);

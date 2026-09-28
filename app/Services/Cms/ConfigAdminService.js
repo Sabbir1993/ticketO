@@ -1,7 +1,7 @@
 // CMS configuration (GET /api/admin/config, PUT /api/admin/config/:section).
 // Keeps the prototype's config shape for the UI, but every section is stored in its own table:
 //   platform/branding → settings · categories → categories · methods → payment_methods
-//   gateways → gateway_settings (secrets: Envelope ciphertext, write-only) · promos → promos · home → home_sections
+//   gateways → gateway_settings (on/off only — stores belong to merchants) · promos → promos · home → home_sections
 // Each section has its own permission; every change is audited (secrets never appear in the audit trail).
 const Db = use('App/Support/Db');
 const DB = use('laranode/Support/Facades/DB');
@@ -14,33 +14,26 @@ const PaymentMethod = use('App/Models/PaymentMethod');
 const GatewaySetting = use('App/Models/GatewaySetting');
 const HomeSection = use('App/Models/HomeSection');
 const Banner = use('App/Models/Banner');
-const Envelope = use('App/Security/Envelope');
 const Sslcommerz = use('App/Gateways/SslcommerzGateway');
-const GatewayCredentialService = use('App/Services/GatewayCredentialService');
 const SettingsService = use('App/Services/SettingsService');
 const BootstrapService = use('App/Services/BootstrapService');
 const AuditService = use('App/Services/AuditService');
-const SecurityEventService = use('App/Services/SecurityEventService');
 const Access = use('App/Support/Access');
 const { slugify } = use('App/Support/Ids');
 const { bad } = use('App/Support/HttpError');
 
-const MASK = '••••••••';
 const SECTION_PERMISSION = {
     platform: 'settings.manage', branding: 'branding.manage', home: 'content.manage', categories: 'content.manage',
     methods: 'gateways.manage', gateways: 'gateways.manage', promos: 'promos.manage',
 };
-// Gateway fields: which are public (stored as-is) and which are secret (encrypted JSON).
-const GATEWAY_FIELDS = {
-    sslcommerz: { publicId: 'storeId', config: [], secret: ['storePassword'] },
-    bkash: { publicId: 'appKey', config: ['username'], secret: ['appSecret', 'password'] },
-};
+// Gateways the CMS can switch on/off for every merchant. Store credentials are set by each merchant
+// (Settings → Payment gateway, or per event); the platform keeps none.
+const GATEWAYS = ['sslcommerz', 'bkash'];
 const HOME_KEYS = ['categories', 'sort', 'limit', 'includeUpcoming', 'tag', 'sub', 'cta', 'href', 'icon', 'cityName'];
 const ALIAS = { allowMerchantDirectPg: 'allowMerchantDirectPG' };
 const camel = (s) => { const k = s.replace(/_([a-z])/g, (_, c) => c.toUpperCase()); return ALIAS[k] || k; };
 const snake = (s) => (s === 'allowMerchantDirectPG' ? 'allow_merchant_direct_pg' : s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`));
 const camelKeys = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [camel(k), v]));
-const gwAad = (gateway) => `gateway_settings:${gateway}`;
 
 async function categoriesTree() {
     const rows = await DB.table('categories as c').join('view_types as v', 'v.id', '=', 'c.view_type_id').leftJoin('layout_templates as t', 't.id', '=', 'c.default_template_id')
@@ -51,20 +44,13 @@ async function categoriesTree() {
 }
 
 async function gatewaysView() {
-    const rows = await GatewaySetting.select('gateway', 'is_enabled', 'public_id', 'public_config', 'secret_ciphertext', 'verified_at').get();
+    const rows = await GatewaySetting.select('gateway', 'is_enabled').get();
     const out = {};
-    for (const [g, f] of Object.entries(GATEWAY_FIELDS)) {
-        const r = rows.find((x) => x.gateway === g) || {};
-        const cfg = Db.json(r.public_config) || {};
-        out[g] = {
-            enabled: !!r.is_enabled, verifiedAt: r.verified_at || null,
-            // Sandbox / live comes from SSLCZ_INIT_URL / SSLCZ_VALIDATION_URL; credentials from here or the env fallback.
-            ...(g === 'sslcommerz' ? { ...Sslcommerz.endpoints(), sandbox: Sslcommerz.mode() === 'sandbox', credentialSource: await GatewayCredentialService.platformSource(g) } : {}),
-            [f.publicId]: r.public_id || '', ...Object.fromEntries(f.config.map((k) => [k, cfg[k] || ''])),
-            // Write-only: a mask when a secret is stored, empty otherwise. The value itself never leaves the server.
-            ...Object.fromEntries(f.secret.map((k) => [k, r.secret_ciphertext ? MASK : ''])),
-        };
+    for (const g of GATEWAYS) {
+        const r = rows.find((x) => x.gateway === g);
+        out[g] = { enabled: !r || !!r.is_enabled, ...(g === 'sslcommerz' ? Sslcommerz.endpoints() : {}) };
     }
+    out.merchantStores = Number((await DB.table('merchant_gateway_credentials').where('gateway', 'sslcommerz').whereNotNull('verified_at').count()) || 0);
     // The simulator is controlled by PAYMENT_SIMULATOR in the environment and is always off in production.
     out.simulator = { enabled: !!config('ticketo')?.paymentSimulator && env('APP_ENV') !== 'production', envControlled: true };
     return out;
@@ -178,43 +164,13 @@ const ConfigAdminService = {
     async _gateways(ctx, value) {
         if (!value || typeof value !== 'object') bad('Invalid gateway settings');
         const now = new Date();
-        const changedSecrets = [];
-        for (const [g, f] of Object.entries(GATEWAY_FIELDS)) {
-            const v = value[g];
-            if (!v) continue;
-            const cur = await GatewaySetting.select('id', 'secret_ciphertext', 'public_config').where('gateway', g).first();
-            const publicId = String(v[f.publicId] || '').trim().slice(0, 120) || null;
-            const patch = { is_enabled: v.enabled ? 1 : 0, public_id: publicId, updated_by: ctx.user.id, updated_at: now };
-            if (g === 'sslcommerz') patch.sandbox = Sslcommerz.mode() === 'sandbox' ? 1 : 0; // informational; the env URLs decide
-            patch.public_config = JSON.stringify({ ...(Db.json(cur?.public_config) || {}), ...Object.fromEntries(f.config.map((k) => [k, String(v[k] || '').trim().slice(0, 120)])) });
-            // Secrets: only fields the admin actually typed are replaced; the mask / blank keeps the stored value.
-            const typed = f.secret.filter((k) => typeof v[k] === 'string' && v[k] !== '' && v[k] !== MASK);
-            if (typed.length) {
-                const secrets = cur?.secret_ciphertext ? Envelope.decryptJson(cur.secret_ciphertext, gwAad(g)) : {};
-                for (const k of typed) secrets[k] = String(v[k]).trim().slice(0, 500); // pasted values often carry spaces
-                const { ciphertext, keyVersion } = Envelope.encryptJson(secrets, gwAad(g));
-                Object.assign(patch, { secret_ciphertext: ciphertext, key_version: keyVersion, secret_last4: null, verified_at: null });
-                changedSecrets.push(...typed.map((k) => `${g}.${k}`));
-            }
-            const curFull = cur ? await GatewaySetting.select('public_id').where('id', cur.id).first() : null;
-            if (!typed.length && curFull && curFull.public_id !== publicId) patch.verified_at = null; // a new store id needs a new test
-            if (cur) await GatewaySetting.where('id', cur.id).update(patch);
+        for (const g of GATEWAYS) {
+            if (!value[g]) continue;
+            const patch = { is_enabled: value[g].enabled ? 1 : 0, updated_by: ctx.user.id, updated_at: now };
+            if (await GatewaySetting.where('gateway', g).exists()) await GatewaySetting.where('gateway', g).update(patch);
             else await GatewaySetting.create({ gateway: g, ...patch });
         }
-        if (changedSecrets.length) SecurityEventService.record(ctx, 'secret_rotated', { details: { fields: changedSecrets, scope: 'platform_gateway' } });
-        return { meta: { secretsChanged: changedSecrets, enabled: Object.fromEntries(Object.keys(GATEWAY_FIELDS).map((g) => [g, !!value[g]?.enabled])) } };
-    },
-
-    /** POST /api/admin/config/gateways/sslcommerz/test — opens a ৳10 session with the platform store (nothing is charged). */
-    async testGateway(ctx, gateway) {
-        Access.need(ctx, 'gateways.manage');
-        if (gateway !== 'sslcommerz') bad('Only SSLCOMMERZ can be tested here');
-        const resolved = await GatewayCredentialService.resolve(ctx, { gateway, pgMode: 'platform' });
-        if (!resolved) return { ok: false, mode: Sslcommerz.mode(), message: 'No platform credentials: enter the Store ID and password here (or set SSLCZ_STORE_ID / SSLCZ_STORE_PASSWORD), and keep SSLCOMMERZ enabled.' };
-        const r = await Sslcommerz.test(resolved.creds, { callbackBase: `${config('ticketo').publicUrl}/api/pg/sslcommerz` });
-        if (r.ok && resolved.source === 'cms') await GatewaySetting.where('gateway', gateway).update({ verified_at: new Date(), updated_at: new Date() });
-        await AuditService.record(ctx, r.ok ? 'PG_VERIFIED' : 'PG_VERIFY_FAILED', { type: 'gateway', id: gateway, label: gateway }, { meta: { mode: r.mode, source: resolved.source } });
-        return { ...r, credentialSource: resolved.source };
+        return { meta: { enabled: Object.fromEntries(GATEWAYS.map((g) => [g, !!value[g]?.enabled])) } };
     },
 
     async _promos(ctx, list) {

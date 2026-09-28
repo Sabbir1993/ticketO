@@ -4,6 +4,7 @@
 //   · the event's seat plan is a snapshot (event_layouts); changing it re-materialises unsold shows only —
 //     SeatMapService refuses when a show already has held or sold seats
 //   · a show with bookings cannot be removed from the schedule
+// Payment store: the merchant default, or the event's own (savePayment). Publishing needs a verified one.
 const Db = use('App/Support/Db');
 const DB = use('laranode/Support/Facades/DB');
 const Event = use('App/Models/Event');
@@ -22,7 +23,10 @@ const Lookup = use('App/Models/Lookup');
 const Promo = use('App/Models/Promo');
 const Order = use('App/Models/Order');
 const Merchant = use('App/Models/Merchant');
-const MerchantGatewayCredential = use('App/Models/MerchantGatewayCredential');
+const EventGatewayCredential = use('App/Models/EventGatewayCredential');
+const Creds = use('App/Services/GatewayCredentialService');
+const Sslcommerz = use('App/Gateways/SslcommerzGateway');
+const Access = use('App/Support/Access');
 const ShowSeat = use('App/Models/ShowSeat');
 const ShowZone = use('App/Models/ShowZone');
 const LayoutService = use('App/Services/LayoutService');
@@ -40,6 +44,17 @@ const iso = (d) => (d ? new Date(d).toISOString() : null);
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const date = (v, label) => { if (v === null || v === undefined || v === '') return null; const d = new Date(v); if (Number.isNaN(d.getTime())) bad(`${label} is not a valid date`); return d; };
 const HEX = /^#[0-9a-f]{6}$/i;
+
+/** Which store the event uses. Masked values only. */
+async function paymentView(e) {
+    const [own, def] = await Promise.all([
+        EventGatewayCredential.select('public_id', 'secret_ciphertext', 'is_active', 'verified_at').where('event_id', e.id).where('gateway', 'sslcommerz').first(),
+        Creds.viewOf('merchant', e.merchant_id, 'sslcommerz'),
+    ]);
+    const useDefault = !own?.is_active;
+    const event = own ? Creds.view(own, 'sslcommerz') : { storeId: '', storePassword: '', verifiedAt: null };
+    return { useDefault, mode: Sslcommerz.mode(), sslcommerz: event, merchantDefault: def, active: useDefault ? def : event };
+}
 
 async function ownEvent(ctx, eventUuid) {
     const e = await Event.where('uuid', String(eventUuid || '')).where('merchant_id', ctx.merchantId || 0).first();
@@ -145,7 +160,42 @@ const MerchantEventService = {
             bookingLimit: e.booking_limit, saleStart: iso(e.sale_start), saleEnd: iso(e.sale_end),
             customSpec: layout?.is_custom ? layout.spec : null,
             promos: promos.map((p) => ({ code: p.code, type: p.type, value: Number(p.value) })),
+            payment: await paymentView(e),
         };
+    },
+
+    /**
+     * PUT /api/merchant/events/{id}/payment — { useDefault: true } or { useDefault: false, sslcommerz: { storeId, storePassword } }.
+     * The password is write-only: send the mask (or nothing) to keep the stored one.
+     */
+    async savePayment(ctx, eventUuid, { useDefault = true, sslcommerz = {} } = {}) {
+        Access.need(ctx, 'merchant.gateway.manage');
+        const e = await ownEvent(ctx, eventUuid);
+        const cur = await EventGatewayCredential.select('is_active', 'secret_ciphertext').where('event_id', e.id).where('gateway', 'sslcommerz').first();
+        let changed = [];
+        if (useDefault) await Creds.useDefault(e.id, 'sslcommerz');
+        else {
+            if (!str(sslcommerz.storeId, 120)) bad('Enter the Store ID for this event');
+            const hasPassword = (typeof sslcommerz.storePassword === 'string' && sslcommerz.storePassword.trim() && sslcommerz.storePassword !== Creds.MASK) || cur?.secret_ciphertext;
+            if (!hasPassword) bad('Enter the Store password for this event');
+            changed = await Creds.save(ctx, { scope: 'event', ownerId: e.id, merchantId: e.merchant_id, gateway: 'sslcommerz', values: sslcommerz });
+        }
+        await AuditService.record(ctx, 'EVENT_PG_UPDATED', { type: 'event', id: e.id, label: e.title }, {
+            before: { store: cur?.is_active ? 'event' : 'merchant_default' }, after: { store: useDefault ? 'merchant_default' : 'event' }, meta: { secretsChanged: changed }, merchantId: e.merchant_id,
+        });
+        return paymentView(e);
+    },
+
+    /** POST /api/merchant/events/{id}/payment/test — a ৳10 session on the store this event will use (never charged). */
+    async testPayment(ctx, eventUuid) {
+        Access.need(ctx, 'merchant.gateway.manage');
+        const e = await ownEvent(ctx, eventUuid);
+        const resolved = await Creds.resolve(ctx, { gateway: 'sslcommerz', merchantId: e.merchant_id, eventId: e.id, checkEnabled: false });
+        if (!resolved) bad('No payment store yet — enter this event’s store, or set your default store in Settings → Payment gateway');
+        const r = await Sslcommerz.test(resolved.creds, { callbackBase: `${config('ticketo').publicUrl}/api/pg/sslcommerz`, merchantRef: e.uuid });
+        if (r.ok) await Creds.markVerified(resolved.source, resolved.ownerId, 'sslcommerz');
+        await AuditService.record(ctx, r.ok ? 'PG_VERIFIED' : 'PG_VERIFY_FAILED', { type: 'event', id: e.id, label: e.title }, { meta: { gateway: 'sslcommerz', scope: resolved.source, mode: r.mode }, merchantId: e.merchant_id });
+        return { ...r, source: resolved.source, payment: await paymentView(e) };
     },
 
     async save(ctx, input = {}) {
@@ -286,11 +336,11 @@ const MerchantEventService = {
     async publish(ctx, eventUuid) {
         const e = await ownEvent(ctx, eventUuid);
         if (!['draft', 'rejected', 'paused'].includes(e.status)) bad(e.status === 'published' ? 'This event is already live' : `A ${e.status.replace('_', ' ')} event cannot be published`);
-        const m = await Merchant.select('status', 'pg_mode').where('id', e.merchant_id).first();
+        const m = await Merchant.select('status').where('id', e.merchant_id).first();
         if (m.status !== 'active') bad(m.status === 'pending' ? 'Your merchant account is still under KYC review. You can publish once it is approved.' : `Merchant account is ${m.status}`, 'merchant_inactive');
-        if (m.pg_mode === 'direct' && !(await MerchantGatewayCredential.where('merchant_id', e.merchant_id).whereNotNull('verified_at').exists())) {
-            bad('Verify your payment gateway connection (Settings → Payment gateway) before publishing', 'pg_unverified');
-        }
+        const store = await paymentView(e);
+        if (!store.active) bad('Set a payment store — your default (Settings → Payment gateway) or this event’s own (Payment step) — before publishing', 'pg_missing');
+        if (!store.active.verifiedAt) bad(`Test the ${store.useDefault ? 'default' : 'event'} payment store connection (Payment step → Test connection) before publishing`, 'pg_unverified');
         const [tiers, shows, layout, overrides] = await Promise.all([
             EventTier.select('tier_key').where('event_id', e.id).get(),
             EventShow.select('id').where('event_id', e.id).where('status', 'scheduled').where('starts_at', '>', new Date()).get(),

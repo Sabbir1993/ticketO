@@ -107,7 +107,7 @@ function Merchants({ onChange }) {
       <div className="overflow-x-auto"><table className="w-full"><thead className="bg-ink-50"><tr><th className="th">Merchant</th><th className="th">Type</th><th className="th">Collection</th><th className="th">Commission</th><th className="th">Events</th><th className="th">Joined</th><th className="th">Status</th><th className="th" /></tr></thead>
         <tbody className="divide-y divide-ink-100">{sorted.map((m) => (
           <tr key={m.id}><td className="td font-medium">{m.name}<div className="text-xs text-ink-500">{m.owner.email}</div></td><td className="td">{m.type}</td>
-            <td className="td text-sm">{m.pg?.mode === 'direct' ? <span className="flex items-center gap-1">Direct {m.pg.sslcommerz?.verifiedAt ? <Icon name="BadgeCheck" size={14} className="text-emerald-600" /> : <span className="text-xs text-amber-600">(unverified)</span>}</span> : 'Via Ticketo'}</td>
+            <td className="td text-sm">{m.pg?.sslcommerz?.storeId ? <span className="flex items-center gap-1">Own store {m.pg.sslcommerz.verifiedAt ? <Icon name="BadgeCheck" size={14} className="text-emerald-600" /> : <span className="text-xs text-amber-600">(unverified)</span>}</span> : <span className="text-xs text-amber-600">No store yet</span>}</td>
             <td className="td">{m.commissionPct}%</td><td className="td">{m.events}</td><td className="td">{fmtDate(m.createdAt, { weekday: false, year: true })}</td>
             <td className="td"><Pill status={m.status} /></td><td className="td"><button onClick={() => { setOpen(m); setNote(''); setComm(String(m.commissionPct)); }} className="text-sm font-medium text-brand-500">{m.status === 'pending' ? 'Review' : 'Manage'}</button></td></tr>
         ))}</tbody></table></div>
@@ -118,7 +118,7 @@ function Merchants({ onChange }) {
               <h4 className="font-semibold">Business</h4>
               <dl className="grid grid-cols-[120px_1fr] gap-y-1"><dt className="text-ink-500">Legal name</dt><dd>{open.business.legalName}</dd><dt className="text-ink-500">Trade licence</dt><dd>{open.business.tradeLicense}</dd><dt className="text-ink-500">e-TIN / BIN</dt><dd>{open.business.tin || '—'} / {open.business.bin || '—'}</dd><dt className="text-ink-500">Address</dt><dd>{open.business.address || '—'}</dd><dt className="text-ink-500">Owner</dt><dd>{open.owner.name} · {open.owner.phone}</dd></dl>
               <h4 className="pt-2 font-semibold">Settlement</h4><p>{open.settlement.type === 'bank' ? `${open.settlement.bankName} · ${open.settlement.accountName} · ${open.settlement.accountNo}` : `Wallet ${open.settlement.wallet}`}</p>
-              <h4 className="pt-2 font-semibold">Payment gateway</h4><p>{open.pg?.mode === 'direct' ? `Own SSLCOMMERZ store "${open.pg.sslcommerz?.storeId}" (${open.pg.sslcommerz?.sandbox !== false ? 'sandbox' : 'live'}) — ${open.pg.sslcommerz?.verifiedAt ? 'verified' : 'not verified'}` : 'Ticketo collects and settles weekly'}</p>
+              <h4 className="pt-2 font-semibold">Payment gateway</h4><p>{open.pg?.sslcommerz?.storeId ? `Default SSLCOMMERZ store "${open.pg.sslcommerz.storeId}" — ${open.pg.sslcommerz.verifiedAt ? 'verified' : 'not verified'}. Events may use their own store.` : 'No default store yet — each event must set its own before publishing.'}</p>
             </div>
             <div className="space-y-3 text-sm">
               <h4 className="font-semibold">KYC documents</h4>
@@ -205,7 +205,6 @@ function Platform() {
       <Panel title="Merchant onboarding & publishing"><div className="grid gap-3 p-5 md:grid-cols-2">
         <Toggle on={p.merchantAutoApprove} onChange={(v) => setP({ ...p, merchantAutoApprove: v })} label="Auto-approve new merchants" hint="Off = admin reviews KYC before merchants can publish" />
         <Toggle on={p.eventRequiresApproval} onChange={(v) => setP({ ...p, eventRequiresApproval: v })} label="Review events before they go live" hint="Off = verified merchants publish instantly" />
-        <Toggle on={p.allowMerchantDirectPG} onChange={(v) => setP({ ...p, allowMerchantDirectPG: v })} label="Allow merchants to connect their own gateway" hint="Direct settlement to the merchant’s SSLCOMMERZ / bKash account" />
         <Toggle on={p.allowGuestCheckout} onChange={(v) => setP({ ...p, allowGuestCheckout: v })} label="Guest checkout" hint="Buy without signing in (OTP not required)" />
       </div></Panel>
       <Panel title="Fees & limits"><div className="grid gap-4 p-5 sm:grid-cols-3">{[num('convenienceFeePct', 'Convenience fee %', 0.1), num('vatOnFeePct', 'VAT on fee %'), num('defaultCommissionPct', 'Default commission %', 0.5), num('holdMinutes', 'Seat hold (minutes)'), num('maxTicketsPerOrder', 'Max tickets per order')]}</div></Panel>
@@ -423,27 +422,37 @@ function Venues() {
   );
 }
 
+// Sandbox / live is set by SSLCZ_INIT_URL and SSLCZ_VALIDATION_URL in the server environment, not here.
+function SslczStatus({ g, stores }) {
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="rounded-xl bg-ink-50 p-3">
+        <div className="flex items-center gap-2"><span className={`badge ${g.mode === 'live' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{g.mode === 'live' ? 'LIVE' : 'SANDBOX'}</span><span className="text-ink-500">set by the server environment</span></div>
+        <div className="mt-2 break-all font-mono text-xs text-ink-500">init: {g.initUrl}<br />validate: {g.validationUrl}</div>
+      </div>
+      <p className="text-ink-700">Store ID and password are entered by each merchant: a default store in their portal, optionally a different store per event. {stores} merchant store{stores === 1 ? '' : 's'} verified.</p>
+    </div>
+  );
+}
+
 function Payments() {
   const { toast } = useStore();
   const { data, loading, save } = useAdminConfig();
   const [g, setG] = useState(null); const [m, setM] = useState(null);
   useEffect(() => { if (data) { setG(data.payment.gateways); setM(data.payment.methods); } }, [data]);
   if (loading || !g) return <Loading />;
-  const inp = (gw, k, l, type = 'text') => <div key={k}><label className="label" htmlFor={`g-${gw}-${k}`}>{l}</label><input id={`g-${gw}-${k}`} type={type} className="input" value={g[gw][k] || ''} onChange={(e) => setG({ ...g, [gw]: { ...g[gw], [k]: e.target.value } })} autoComplete="new-password" /></div>;
   return (
     <div className="space-y-6">
-      <p className="text-sm text-ink-500">Platform gateway accounts are used for merchants on “Ticketo collects”. Merchants on direct mode use their own credentials from their portal. Secrets are write-only.</p>
+      <p className="text-sm text-ink-500">Payments settle to each merchant’s own gateway account. Switching a gateway off here disables it for every merchant.</p>
       <div className="grid gap-6 xl:grid-cols-2">
-        <Panel title="SSLCOMMERZ (platform store)" action={<Toggle on={g.sslcommerz.enabled} onChange={(v) => setG({ ...g, sslcommerz: { ...g.sslcommerz, enabled: v } })} label="Enabled" />}>
-          <div className="grid gap-4 p-5 sm:grid-cols-2">{inp('sslcommerz', 'storeId', 'Store ID')}{inp('sslcommerz', 'storePassword', 'Store password', 'password')}
-            <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" className="accent-brand-500" checked={g.sslcommerz.sandbox !== false} onChange={(e) => setG({ ...g, sslcommerz: { ...g.sslcommerz, sandbox: e.target.checked } })} />Sandbox (sandbox.sslcommerz.com) — uncheck for securepay.sslcommerz.com</label></div>
+        <Panel title="SSLCOMMERZ" action={<Toggle on={g.sslcommerz.enabled} onChange={(v) => setG({ ...g, sslcommerz: { ...g.sslcommerz, enabled: v } })} label="Enabled" />}>
+          <div className="p-5"><SslczStatus g={g.sslcommerz} stores={g.merchantStores || 0} /></div>
         </Panel>
-        <Panel title="bKash Tokenized Checkout (platform)" action={<Toggle on={g.bkash.enabled} onChange={(v) => setG({ ...g, bkash: { ...g.bkash, enabled: v } })} label="Enabled" />}>
-          <div className="grid gap-4 p-5 sm:grid-cols-2">{inp('bkash', 'appKey', 'App key')}{inp('bkash', 'appSecret', 'App secret', 'password')}{inp('bkash', 'username', 'Username')}{inp('bkash', 'password', 'Password', 'password')}
-            <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" className="accent-brand-500" checked={g.bkash.sandbox !== false} onChange={(e) => setG({ ...g, bkash: { ...g.bkash, sandbox: e.target.checked } })} />Sandbox</label></div>
+        <Panel title="bKash Tokenized Checkout" action={<Toggle on={g.bkash.enabled} onChange={(v) => setG({ ...g, bkash: { ...g.bkash, enabled: v } })} label="Enabled" />}>
+          <p className="p-5 text-sm text-ink-700">Merchants enter their own bKash PGW credentials in their portal.</p>
         </Panel>
       </div>
-      <Panel title="Sandbox simulator"><div className="p-5"><div className="flex items-start justify-between gap-4 rounded-xl border border-ink-100 p-4"><span><span className="font-medium">Payment simulator: {g.simulator.enabled ? 'on' : 'off'}</span><span className="block text-xs text-ink-500">Set by PAYMENT_SIMULATOR in the server environment and always off in production, so it cannot be switched on from the CMS.</span></span><Pill status={g.simulator.enabled ? 'pending' : 'active'} /></div></div></Panel>
+      <Panel title="Sandbox simulator"><div className="p-5"><div className="flex items-start justify-between gap-4 rounded-xl border border-ink-100 p-4"><span><span className="font-medium">Payment simulator: {g.simulator.enabled ? 'on' : 'off'}</span><span className="block text-xs text-ink-500">Development only. When an event has no working payment store, checkout opens a fake payment page (success / fail / cancel) instead of SSLCOMMERZ, so the booking flow can be tested without a real store. Set by PAYMENT_SIMULATOR in the server environment and forced off in production.</span></span><span className={`badge shrink-0 ${g.simulator.enabled ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>{g.simulator.enabled ? 'On · dev only' : 'Off'}</span></div></div></Panel>
       <Panel title="Checkout payment methods">
         <div className="overflow-x-auto"><table className="w-full"><thead className="bg-ink-50"><tr><th className="th">Method</th><th className="th">Shown</th><th className="th">Routed to</th><th className="th">SSLCOMMERZ channel (multi_card_name)</th></tr></thead>
           <tbody className="divide-y divide-ink-100">{m.map((x, i) => (

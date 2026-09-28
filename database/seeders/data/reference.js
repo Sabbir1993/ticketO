@@ -14,7 +14,6 @@ const settings = [
     ['platform', 'allow_guest_checkout', true, 'boolean', 'Allow guest checkout', 1],
     ['platform', 'merchant_auto_approve', false, 'boolean', 'Auto-approve new merchants (skip KYC review)', 1],
     ['platform', 'event_requires_approval', false, 'boolean', 'Review events before they go live', 1],
-    ['platform', 'allow_merchant_direct_pg', true, 'boolean', 'Merchants may connect their own gateway', 1],
     ['platform', 'cms_mfa_required', true, 'boolean', 'Require authenticator (TOTP) for CMS users', 0],
 
     ['branding', 'name', 'Ticketo', 'string', 'Brand name', 1],

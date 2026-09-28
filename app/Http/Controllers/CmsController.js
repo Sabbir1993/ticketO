@@ -20,7 +20,6 @@ class CmsController extends Controller {
     async reviewEvent(id, req, res) { return json(res, await CatalogAdminService.reviewEvent(req.ctx, id, req.only(['action', 'note']))); }
 
     async config(req, res) { return json(res, await ConfigAdminService.get()); }
-    async testGateway(gateway, req, res) { return json(res, await ConfigAdminService.testGateway(req.ctx, gateway)); }
     async updateConfig(section, req, res) { return json(res, await ConfigAdminService.update(req.ctx, section, req.input('value'))); }
 
     async templates(req, res) { return json(res, await CatalogAdminService.templates(req.ctx, { viewType: req.query('viewType') })); }

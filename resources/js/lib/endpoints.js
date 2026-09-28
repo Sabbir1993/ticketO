@@ -35,6 +35,8 @@ export const ROUTES = [
   ['uploadKycDocs', 'POST', '/merchant/kyc', ['merchant']],
   ['updatePaymentSettings', 'PUT', '/merchant/payment-settings', ['merchant']],
   ['testPaymentConnection', 'POST', '/merchant/payment-settings/test', ['merchant']],
+  ['saveEventPayment', 'PUT', '/merchant/events/:id/payment', ['merchant']],
+  ['testEventPayment', 'POST', '/merchant/events/:id/payment/test', ['merchant']],
   ['merchantDashboard', 'GET', '/merchant/dashboard', ['merchant']],
   ['merchantEvents', 'GET', '/merchant/events', ['merchant', 'admin']],
   ['getMerchantEvent', 'GET', '/merchant/events/:id', ['merchant', 'admin']],

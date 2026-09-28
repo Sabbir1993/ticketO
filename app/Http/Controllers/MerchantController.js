@@ -19,7 +19,7 @@ class MerchantController extends Controller {
 
     async update(req, res) { return json(res, await MerchantAccountService.update(req.ctx, req.only(['business', 'settlement', 'owner', 'type']))); }
     async kyc(req, res) { return json(res, await MerchantAccountService.addKycDocs(req.ctx, req.only(['docs']))); }
-    async paymentSettings(req, res) { return json(res, await MerchantAccountService.updatePaymentSettings(req.ctx, req.only(['mode', 'sslcommerz', 'bkash']))); }
+    async paymentSettings(req, res) { return json(res, await MerchantAccountService.updatePaymentSettings(req.ctx, req.only(['sslcommerz', 'bkash']))); }
     async testPayment(req, res) { return json(res, await MerchantAccountService.testConnection(req.ctx, req.only(['gateway']))); }
 
     async dashboard(req, res) { return json(res, await MerchantReportService.dashboard(req.ctx)); }
@@ -29,6 +29,8 @@ class MerchantController extends Controller {
     async events(req, res) { return json(res, await MerchantEventService.list(req.ctx)); }
     async event(id, req, res) { return json(res, await MerchantEventService.get(req.ctx, id)); }
     async saveEvent(req, res) { return json(res, await MerchantEventService.save(req.ctx, req.input('event') || {})); }
+    async eventPayment(id, req, res) { return json(res, await MerchantEventService.savePayment(req.ctx, id, req.only(['useDefault', 'sslcommerz']))); }
+    async testEventPayment(id, req, res) { return json(res, await MerchantEventService.testPayment(req.ctx, id)); }
     async publish(id, req, res) { return json(res, await MerchantEventService.publish(req.ctx, id)); }
     async status(id, req, res) { return json(res, await MerchantEventService.setStatus(req.ctx, id, req.input('status'))); }
     async destroy(id, req, res) { return json(res, await MerchantEventService.remove(req.ctx, id)); }

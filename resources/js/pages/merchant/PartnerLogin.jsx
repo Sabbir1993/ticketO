@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import Link from '@/components/Link';
 import Logo from '@/components/Logo';
 import QR from '@/components/QR';
@@ -9,15 +9,17 @@ import { useStore } from '@/lib/store';
 // Step 1: email + password. Step 2 (CMS always, others when enabled): authenticator code.
 // First CMS sign-in shows a one-time QR to enrol the authenticator app.
 export default function PartnerLogin() {
-  const { signIn, toast } = useStore();
+  const { signIn, toast, user, checked } = useStore();
   const nav = useNavigate();
   const next = useSearchParams()[0].get('next');
+  const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
   const [f, setF] = useState({ email: '', password: '' });
   const [mfa, setMfa] = useState(null); // null | { mode: 'verify' } | { mode: 'enroll', otpauthUrl, secret }
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const done = (r) => { signIn(r); nav(next || (r.user.role === 'admin' ? '/admin' : '/merchant'), { replace: true }); };
+  const homeOf = (u) => (u.role === 'admin' ? '/admin' : '/merchant');
+  const done = (r) => { signIn(r); nav(safeNext || homeOf(r.user), { replace: true }); };
   const submit = async (e) => {
     e?.preventDefault(); setBusy(true);
     try {
@@ -34,12 +36,16 @@ export default function PartnerLogin() {
     finally { setBusy(false); }
   };
 
+  // Already signed in as staff: go to the requested page, or this account's workspace.
+  if (checked && user && user.role !== 'customer' && !mfa) return <Navigate to={safeNext || homeOf(user)} replace />;
+
   return (
     <div className="flex min-h-[75vh] items-center justify-center bg-ink-50/70 px-4 py-10">
       <div className="w-full max-w-md">
         {!mfa ? (
           <form onSubmit={submit} className="card p-7">
             <Logo /><h1 className="mt-5 text-xl font-bold">Partner & staff sign in</h1><p className="text-sm text-ink-500">Merchants, box-office and gate staff, platform admins.</p>
+            {user?.role === 'customer' && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">You&apos;re signed in as a customer ({user.phone}). Signing in here switches to your staff account.</p>}
             <label className="label mt-5" htmlFor="pe">Email</label><input id="pe" type="email" required className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoComplete="username" />
             <label className="label mt-3" htmlFor="pp">Password</label><input id="pp" type="password" required className="input" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" />
             <button disabled={busy} className="btn-primary mt-5 h-12 w-full">{busy ? 'Signing in…' : 'Sign in'}</button>

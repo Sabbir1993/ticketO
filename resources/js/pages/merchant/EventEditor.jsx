@@ -8,12 +8,13 @@ import Poster from '@/components/Poster';
 import VenueMap, { TierLegend } from '@/components/venue/VenueMap';
 import { Loading } from '@/components/States';
 import { DesignerModal } from '@/pages/admin/Admin';
+import { StoreFields } from '@/pages/merchant/PgForm';
 import { blockCapacity } from '@shared/templates.mjs';
 import { api } from '@/lib/api';
 import { useApi, useStore } from '@/lib/store';
 import { bdt, cx, toLocalInput, STATUS_LABEL } from '@/lib/utils';
 
-const STEPS = ['Basics', 'Venue & layout', 'Pricing', 'Schedule', 'Policies & promos', 'Review & publish'];
+const STEPS = ['Basics', 'Venue & layout', 'Pricing', 'Schedule', 'Policies & promos', 'Payment', 'Review & publish'];
 const PALETTES = [['#1E3A8A', '#2D499A'], ['#9F1239', '#EE3240'], ['#7b2cbf', '#ff006e'], ['#006d77', '#83c5be'], ['#023e8a', '#90e0ef'], ['#9d0208', '#ffba08'], ['#1b4332', '#d4a017'], ['#240046', '#7b2cbf'], ['#e63946', '#1d3557'], ['#004b23', '#95d5b2']];
 const isMap = (spec) => { const s = (spec?.blocks || []).filter((b) => b.sell !== 'none'); return s.length > 0 && s.every((b) => b.shape); };
 const in7 = () => { const d = new Date(Date.now() + 7 * 86400000); d.setHours(19, 0, 0, 0); return toLocalInput(d.toISOString()); };
@@ -37,6 +38,52 @@ function toServer(f) {
     sponsors: f.sponsors.split(',').map((x) => x.trim()).filter(Boolean), shows: f.shows.filter((s) => s.date).map((s) => ({ ...s, date: new Date(s.date).toISOString() })),
     saleStart: f.saleStart ? new Date(f.saleStart).toISOString() : null, saleEnd: f.saleEnd ? new Date(f.saleEnd).toISOString() : null,
     tiers: f.tiers.filter((t) => t.price !== '' && t.price !== null && t.price !== undefined && t.on !== false).map((t) => ({ ...t, earlyBird: t.earlyBird?.price && t.earlyBird?.until ? { price: Number(t.earlyBird.price), until: new Date(t.earlyBird.until).toISOString() } : null })) };
+}
+
+/** Which SSLCOMMERZ store receives this event's payments: the merchant default, or one just for this event. */
+function PaymentStep({ event, onChange }) {
+  const { toast } = useStore();
+  const pay = event.payment || { useDefault: true, sslcommerz: {} };
+  const [useDefault, setUseDefault] = useState(pay.useDefault !== false);
+  const [store, setStore] = useState(pay.sslcommerz || {});
+  const [busy, setBusy] = useState(false);
+  const [test, setTest] = useState(null);
+  if (!event.id) return <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Save the draft first — then choose which payment store this event uses.</p>;
+  const def = pay.merchantDefault;
+  const save = async () => {
+    setBusy(true); setTest(null);
+    try { const p = await api.saveEventPayment({ id: event.id, useDefault, ...(useDefault ? {} : { sslcommerz: store }) }); onChange(p); setStore(p.sslcommerz || {}); toast('Payment store saved — test the connection next'); }
+    catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
+  };
+  const run = async () => {
+    setTest({ loading: true });
+    try { const r = await api.testEventPayment({ id: event.id }); setTest(r); onChange(r.payment); setStore(r.payment.sslcommerz || {}); }
+    catch (e) { setTest({ ok: false, message: e.message }); }
+  };
+  const dirty = useDefault !== (pay.useDefault !== false) || (!useDefault && (store.storeId !== (pay.sslcommerz?.storeId || '') || (store.storePassword && store.storePassword !== pay.sslcommerz?.storePassword)));
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-ink-700">Buyers pay into the store chosen here. Leave it on your default store, or give this event its own (e.g. a separate SSLCOMMERZ store for a co-organised show).</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        {[
+          [true, 'Use my default store', def?.storeId ? <>Store <b className="font-mono">{def.storeId}</b> · {def.verifiedAt ? 'verified' : 'not verified'}</> : 'Not set yet — Settings → Payment gateway', 'Wallet'],
+          [false, 'Use a different store for this event', 'Store ID and password only for this event', 'Plug'],
+        ].map(([k, t, d, i]) => (
+          <button type="button" key={String(k)} onClick={() => setUseDefault(k)} className={cx('rounded-xl border-2 p-4 text-left transition', useDefault === k ? 'border-brand-500 bg-brand-50' : 'border-ink-100 hover:border-ink-300')}>
+            <Icon name={i} className="text-brand-500" /><div className="mt-2 font-semibold">{t}</div><div className="text-xs text-ink-500">{d}</div>
+          </button>
+        ))}
+      </div>
+      {!useDefault && <fieldset className="rounded-xl border border-ink-100 p-4"><legend className="px-1 text-sm font-semibold">SSLCOMMERZ store for this event</legend><StoreFields value={store} onChange={setStore} idPrefix="ev-ss" /></fieldset>}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={save} disabled={busy} className="btn-primary h-10 px-5"><Icon name="Save" size={15} />Save payment store</button>
+        <button type="button" onClick={run} disabled={dirty || !pay.active} title={dirty ? 'Save first' : undefined} className="btn-outline h-10 px-5"><Icon name="Plug" size={15} />Test connection</button>
+      </div>
+      {pay.active && !dirty && <p className={cx('flex items-center gap-1 text-sm', pay.active.verifiedAt ? 'text-emerald-700' : 'text-amber-700')}><Icon name={pay.active.verifiedAt ? 'BadgeCheck' : 'AlertTriangle'} size={15} />{pay.useDefault ? 'Default' : 'Event'} store {pay.active.verifiedAt ? 'verified — ready to take payments' : 'not tested yet — publishing needs a successful test'}</p>}
+      {test && <div className={cx('rounded-xl p-3 text-sm', test.loading ? 'bg-ink-50' : test.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-brand-50 text-brand-700')}>{test.loading ? 'Contacting SSLCOMMERZ…' : test.message}</div>}
+      <p className="text-xs text-ink-500">A test opens a ৳10 session that is never charged. Passwords are encrypted and never shown again.</p>
+    </div>
+  );
 }
 
 export default function EventEditor() {
@@ -96,7 +143,7 @@ export default function EventEditor() {
     [pricedTiers.length > 0 && capacity > 0, `${pricedTiers.length} priced categories · ${capacity.toLocaleString()} sellable capacity`],
     [f.shows.some((s) => s.date && new Date(s.date) > new Date()), 'At least one upcoming show'],
     [merchant?.status === 'active', merchant?.status === 'active' ? 'Merchant account verified' : 'Merchant KYC approval (publishing unlocks after admin review)'],
-    [merchant?.pg?.mode !== 'direct' || !!(merchant.pg.sslcommerz?.verifiedAt || merchant.pg.bkash?.verifiedAt), merchant?.pg?.mode === 'direct' ? 'Your own gateway connection verified' : 'Payments collected by Ticketo'],
+    [!!f.payment?.active?.verifiedAt, f.payment?.active ? `${f.payment.useDefault ? 'Default' : 'Event'} payment store "${f.payment.active.storeId}" ${f.payment.active.verifiedAt ? 'verified' : 'not tested yet (Payment step)'}` : 'Payment store (Payment step)'],
   ];
   const save = async (publish) => {
     setBusy(true);
@@ -234,7 +281,9 @@ export default function EventEditor() {
             </div>
           </>)}
 
-          {step === 5 && (<>
+          {step === 5 && <PaymentStep event={f} onChange={(payment) => set({ payment })} />}
+
+          {step === 6 && (<>
             <ul className="space-y-2">{checks.map(([ok, label]) => <li key={label} className="flex items-center gap-2 text-sm"><Icon name={ok ? 'CheckCircle2' : 'AlertTriangle'} size={18} className={ok ? 'text-emerald-600' : 'text-amber-500'} />{label}</li>)}</ul>
             {config.platform.eventRequiresApproval && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">The platform reviews events before they go live. Publishing sends it to the admin queue.</p>}
             <dl className="grid grid-cols-[140px_1fr] gap-y-2 text-sm">

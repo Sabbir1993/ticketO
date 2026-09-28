@@ -19,6 +19,18 @@ export default function Header() {
   const cityName = config?.cities.find((c) => c.id === prefs.city)?.name || 'Select city';
   const customer = user?.role === 'customer' ? user : null;
   const staff = user && user.role !== 'customer' ? user : null;
+  const can = (perm) => !!staff && (staff.superAdmin || (staff.permissions || []).includes(perm));
+  const home = staff ? (staff.role === 'admin' ? ['/admin', 'Admin console'] : ['/merchant', 'Merchant portal']) : ['/merchant/register', 'Sell tickets'];
+  // Customer pages only for customers and guests; staff accounts have no orders / wishlist / points.
+  const personal = [['Ticket', 'Your Orders', '/profile?tab=bookings'], ['Heart', 'Wishlist', '/profile?tab=wishlist'], ['Award', 'Rewards & Badges', '/profile?tab=rewards']];
+  const general = [['Percent', 'Offers', '/offers'], ['LifeBuoy', 'Help & Support', '/help']];
+  const work = staff
+    ? [
+      staff.role === 'admin' ? ['ShieldCheck', 'Admin console', '/admin'] : ['Store', 'Merchant portal', '/merchant'],
+      staff.role === 'merchant' && can('pos.sell') && ['LayoutGrid', 'POS box office', '/pos'],
+      can('gate.scan') && ['ScanLine', 'Gate scanner', '/gate'],
+    ].filter(Boolean)
+    : [['Store', 'Become a merchant', '/merchant/register'], ['LogIn', 'Partner / staff login', '/partner/login']];
 
   return (
     <header className="sticky top-0 z-40 bg-white shadow-[0_1px_0_#eceef3]">
@@ -41,9 +53,9 @@ export default function Header() {
             {config?.categories.slice(0, 8).map((c) => <Link key={c.id} href={`/explore?category=${c.id}`} className="text-ink-800 hover:text-brand-500">{c.name}</Link>)}
           </div>
           <div className="flex gap-6 text-ink-700">
-            <Link href={merchant ? '/merchant' : '/merchant/register'} className="font-medium text-brand-600 hover:text-brand-700">{merchant ? 'Merchant portal' : 'Sell tickets'}</Link>
+            <Link href={home[0]} className="font-medium text-brand-600 hover:text-brand-700">{home[1]}</Link>
             <Link href="/offers" className="hover:text-brand-500">Offers</Link>
-            <Link href="/profile?tab=rewards" className="hover:text-brand-500">Rewards</Link>
+            {!staff && <Link href="/profile?tab=rewards" className="hover:text-brand-500">Rewards</Link>}
           </div>
         </div>
       </nav>
@@ -58,13 +70,13 @@ export default function Header() {
             </div>
             {customer && <Link href="/profile?tab=rewards" className="mx-4 mt-4 flex items-center gap-3 rounded-xl bg-gradient-to-r from-amber-100 to-brand-50 p-3"><Icon name="Crown" size={22} className="text-amber-500" /><div className="text-sm"><b>{tierFor(prefs.lifetimePoints).name} member</b><div className="text-ink-500">{prefs.points.toLocaleString()} points</div></div></Link>}
             <ul className="mt-2 divide-y divide-ink-100 px-2 text-[15px]">
-              {[['Ticket', 'Your Orders', '/profile?tab=bookings'], ['Heart', 'Wishlist', '/profile?tab=wishlist'], ['Award', 'Rewards & Badges', '/profile?tab=rewards'], ['Percent', 'Offers', '/offers'], ['LifeBuoy', 'Help & Support', '/help']].map(([i, l, h]) => (
+              {[...(staff ? [] : personal), ...general].map(([i, l, h]) => (
                 <li key={h}><Link href={h} className="flex items-center gap-4 px-3 py-3.5 hover:bg-ink-50"><Icon name={i} size={19} className="text-ink-500" />{l}<Icon name="ChevronRight" size={16} className="ml-auto text-ink-300" /></Link></li>
               ))}
             </ul>
-            <div className="mt-2 px-5 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-ink-500">For organisers & staff</div>
+            <div className="mt-2 px-5 pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-ink-500">{staff ? 'Your workspace' : 'For organisers & staff'}</div>
             <ul className="px-2 pb-4 text-[15px]">
-              {[['Store', merchant ? 'Merchant portal' : 'Become a merchant', merchant ? '/merchant' : '/merchant/register'], ['LayoutGrid', 'POS box office', '/pos'], ['ScanLine', 'Gate scanner', '/gate'], ['ShieldCheck', 'Admin console', '/admin'], ['LogIn', 'Partner / admin login', '/partner/login']].map(([i, l, h]) => (
+              {work.map(([i, l, h]) => (
                 <li key={h}><Link href={h} className="flex items-center gap-4 px-3 py-3 hover:bg-ink-50"><Icon name={i} size={19} className="text-ink-500" />{l}</Link></li>
               ))}
             </ul>

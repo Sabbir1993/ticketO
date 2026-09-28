@@ -190,7 +190,8 @@ const OrderService = {
         const tranId = `${o.booking_ref}-${attempts + 1}`;
 
         let gateway = m.gateway;
-        const resolved = gateway === 'sslcommerz' ? await GatewayCredentialService.resolve(ctx, { gateway, merchantId: o.merchant_id, pgMode: o.pg_mode }) : null;
+        // The event's own store, else the merchant's default store (there is no platform store).
+        const resolved = gateway === 'sslcommerz' ? await GatewayCredentialService.resolve(ctx, { gateway, merchantId: o.merchant_id, eventId: o.event_id }) : null;
         if (!resolved) {
             if (!simulatorOn()) bad(`${m.name} is not available right now. Please choose another method.`, 'gateway_unavailable');
             gateway = 'simulator'; // local / staging only (PAYMENT_SIMULATOR, never in production)
@@ -200,7 +201,7 @@ const OrderService = {
         }
         const now = new Date();
         const { id: paymentId } = await Payment.create({
-            order_id: o.id, attempt: attempts + 1, method_code: m.code, gateway, pg_mode: resolved?.pgMode || 'platform', tran_id: tranId,
+            order_id: o.id, attempt: attempts + 1, method_code: m.code, gateway, pg_mode: resolved?.pgMode || 'platform', credential_source: resolved?.source || null, tran_id: tranId,
             status: 'initiated', amount: o.total, currency: 'BDT', started_at: now,
         });
         if (gateway === 'simulator') {
@@ -226,10 +227,10 @@ const OrderService = {
             const msg = Redactor.errorMessage(e.message).slice(0, 255);
             await Payment.where('id', paymentId).update({ status: 'failed', error: msg, completed_at: new Date() });
             await logPaymentEvent(ctx, { paymentId, orderId: o.id, source: 'init', payload: { gateway, mode: Sslcommerz.mode(), credentials: resolved.source, error: msg }, result: 'init_failed' });
-            // A rejected store (wrong / inactive credentials, sandbox vs live mismatch) is a platform problem, not the buyer's:
-            // alert the operators and show a neutral message. The real reason is in payment_events / security_events.
+            // A rejected store (wrong / inactive credentials, sandbox vs live mismatch) is the merchant's setup, not the buyer's:
+            // record it and show a neutral message. The real reason is in payment_events / security_events.
             if (/credential|de-?active|store/i.test(msg)) {
-                SecurityEventService.record(ctx, 'gateway_misconfigured', { details: { gateway, mode: Sslcommerz.mode(), source: resolved.source, pg_mode: resolved.pgMode, reason: msg } });
+                SecurityEventService.record(ctx, 'gateway_misconfigured', { details: { gateway, mode: Sslcommerz.mode(), source: resolved.source, merchant_id: o.merchant_id, event_id: o.event_id, reason: msg } });
                 throw new HttpError(503, 'Online payment is temporarily unavailable. Please try again later or contact support.', 'gateway_unavailable');
             }
             throw new HttpError(502, 'The payment gateway could not be reached. Please try again or choose another method.', 'gateway');
@@ -350,14 +351,15 @@ const OrderService = {
      */
     async sslcommerzValidated(ctx, { orderUuid = null, tranId, valId, source, body = null }) {
         const p = await DB.table('payments as p').join('orders as o', 'o.id', '=', 'p.order_id')
-            .select('p.id', 'p.order_id', 'p.status', 'p.tran_id', 'o.uuid', 'o.merchant_id', 'o.pg_mode', 'o.total')
+            .select('p.id', 'p.order_id', 'p.status', 'p.tran_id', 'p.credential_source', 'o.uuid', 'o.merchant_id', 'o.event_id', 'o.total')
             .where('p.tran_id', String(tranId || '')).where('p.gateway', 'sslcommerz').first();
         if (!p || (orderUuid && p.uuid !== orderUuid)) {
             await logPaymentEvent(ctx, { source, payload: { tranId, orderUuid }, result: 'unknown_tran' });
             SecurityEventService.record(ctx, 'payment_validation_failed', { details: { reason: 'unknown tran_id', tranId: String(tranId || '').slice(0, 60), source } });
             return { ok: false, orderUuid, reason: 'unknown' };
         }
-        const resolved = await GatewayCredentialService.resolve(ctx, { gateway: 'sslcommerz', merchantId: p.merchant_id, pgMode: p.pg_mode });
+        // Same store that opened the session (even if the gateway was switched off or the event went back to the default since).
+        const resolved = await GatewayCredentialService.resolve(ctx, { gateway: 'sslcommerz', merchantId: p.merchant_id, eventId: p.event_id, source: p.credential_source || null, checkEnabled: false });
         if (!resolved) return { ok: false, orderUuid: p.uuid, reason: 'gateway_unavailable' };
         if (source === 'ipn') {
             if (!Sslcommerz.verifySignature(body, resolved.creds.storePassword)) {

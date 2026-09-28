@@ -52,12 +52,13 @@ class HttpKernel extends BaseKernel {
         app.disable('x-powered-by');
         app.set('trust proxy', false);
 
-        app.use(helmet({
+        const csp = (extraScripts = [], inlineHandlers = false) => helmet({
             contentSecurityPolicy: {
                 useDefaults: true,
                 directives: {
                     'default-src': ["'self'"],
-                    'script-src': ["'self'", ...(isProd ? [] : [viteDev, "'unsafe-inline'"])],
+                    'script-src': ["'self'", ...(isProd ? [] : [viteDev, "'unsafe-inline'"]), ...extraScripts],
+                    'script-src-attr': [inlineHandlers ? "'unsafe-inline'" : "'none'"],
                     'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
                     'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
                     'img-src': ["'self'", 'data:', 'blob:'],
@@ -69,7 +70,11 @@ class HttpKernel extends BaseKernel {
             },
             strictTransportSecurity: isProd ? { maxAge: 31536000, includeSubDomains: true } : false,
             crossOriginEmbedderPolicy: false,
-        }));
+        });
+        const siteCsp = csp();
+        // The framework log viewer page (/logs, dev only, CMS staff only) uses onclick= handlers.
+        const logViewerCsp = isProd ? siteCsp : csp([], true);
+        app.use((req, res, next) => (req.path === '/logs' ? logViewerCsp : siteCsp)(req, res, next));
 
         // CORS: explicit allow-list only (same-origin SPA needs none).
         app.use((req, res, next) => {

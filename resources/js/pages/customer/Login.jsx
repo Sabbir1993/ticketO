@@ -1,14 +1,15 @@
 import { useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import Link from '@/components/Link';
 import Icon from '@/components/Icon';
 import { api } from '@/lib/api';
 import { useStore } from '@/lib/store';
 
 export default function Login() {
-  const { signIn, toast } = useStore();
+  const { signIn, toast, user, checked } = useStore();
   const nav = useNavigate();
-  const next = useSearchParams()[0].get('next') || '/';
+  const raw = useSearchParams()[0].get('next');
+  const next = raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : '/';
   const [step, setStep] = useState(0);
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
@@ -22,6 +23,19 @@ export default function Login() {
     catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   const finish = async () => { signIn(pending.current); await api.updateProfile({ name }); signIn({ ...pending.current, user: { ...pending.current.user, name } }); nav(next, { replace: true }); };
+  if (checked && user?.role === 'customer' && step === 0) return <Navigate to={next} replace />; // already signed in
+  if (checked && user && user.role !== 'customer') {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center bg-ink-50/70 px-4 py-10">
+        <div className="card w-full max-w-md p-7 text-center">
+          <Icon name="ShieldCheck" size={28} className="mx-auto text-brand-500" />
+          <h1 className="mt-3 text-xl font-bold">You&apos;re signed in as staff</h1>
+          <p className="mt-1 text-sm text-ink-500">{user.name} · {user.role === 'admin' ? 'Platform admin' : 'Merchant'}. Customer bookings, wishlist and rewards need a customer (mobile) account — sign out first to use one.</p>
+          <Link href={user.role === 'admin' ? '/admin' : '/merchant'} className="btn-primary mt-5 h-11 w-full">Go to {user.role === 'admin' ? 'Admin console' : 'Merchant portal'}</Link>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex min-h-[70vh] items-center justify-center bg-ink-50/70 px-4 py-10">
       <div className="card w-full max-w-md p-7">

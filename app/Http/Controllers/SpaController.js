@@ -7,6 +7,7 @@ const SettingsService = use('App/Services/SettingsService');
 
 const ENTRY = 'resources/js/main.jsx';
 let manifest = null;
+let manifestMtime = 0;
 
 function assetTags() {
     if (env('APP_ENV') !== 'production' && !fs.existsSync(path.join(process.cwd(), 'public/build/.vite/manifest.json'))) {
@@ -17,7 +18,10 @@ function assetTags() {
             `<script type="module" src="${vite}/${ENTRY}"></script>`,
         ].join('\n    ');
     }
-    if (!manifest) manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'public/build/.vite/manifest.json'), 'utf8'));
+    // Cached; outside production it is re-read after a rebuild (the old hashed files are gone by then).
+    const file = path.join(process.cwd(), 'public/build/.vite/manifest.json');
+    const mtime = env('APP_ENV') === 'production' && manifest ? manifestMtime : fs.statSync(file).mtimeMs;
+    if (!manifest || mtime !== manifestMtime) { manifest = JSON.parse(fs.readFileSync(file, 'utf8')); manifestMtime = mtime; }
     const chunk = manifest[ENTRY];
     const css = (chunk.css || []).map((f) => `<link rel="stylesheet" href="/build/${f}" />`);
     const preload = (chunk.imports || []).map((k) => manifest[k]?.file).filter(Boolean).map((f) => `<link rel="modulepreload" href="/build/${f}" />`);

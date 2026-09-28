@@ -9,7 +9,7 @@ module.exports = {
     // Simulator is never available in production, whatever the env says.
     paymentSimulator: env('APP_ENV') !== 'production' && String(env('PAYMENT_SIMULATOR', 'true')) === 'true',
     // SSLCOMMERZ endpoints — sandbox or live is decided here (env), not per store.
-    // Credentials: CMS → Payment gateways (encrypted) first; SSLCZ_STORE_ID / SSLCZ_STORE_PASSWORD as fallback.
+    // Store credentials: set by each merchant (default store, optional per-event store), stored encrypted.
     sslcommerz: {
         initUrl: String(env('SSLCZ_INIT_URL', 'https://sandbox.sslcommerz.com/gwprocess/v4/api.php')).trim(),
         validationUrl: String(env('SSLCZ_VALIDATION_URL', 'https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php')).trim(),

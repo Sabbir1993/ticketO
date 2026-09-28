@@ -20,11 +20,12 @@ module.exports = {
     | Configuration for the built-in stunning Log Viewer interface.
     |
     */
-    // Disabled: the framework viewer exposes raw logs + delete endpoints. Logs are reviewed in CMS → Security.
+    // The vendor registration stays off; Ticketo mounts /logs itself (routes/web.js → LogViewerController:
+    // CMS staff only, never in production, Tailwind served locally instead of the CDN).
     allow_log_viewer: false,
 
     log_viewer: {
-        middleware: ['web'], // Optional: protect with authentication
+        middleware: ['auth:cms', 'permission:request_logs.view'],
         endpoint: '/logs'
     },
 

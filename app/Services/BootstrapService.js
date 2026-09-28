@@ -78,6 +78,7 @@ async function build() {
         nav: navMap,
         strings: Object.fromEntries(strings.map((s) => [s.string_key, s.value])),
         simulator: !!cfg?.paymentSimulator && env('APP_ENV') !== 'production',
+        payments: { sslcommerzMode: use('App/Gateways/SslcommerzGateway').mode() }, // sandbox | live (from env URLs; not secret)
     };
 }
 

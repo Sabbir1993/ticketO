@@ -1,5 +1,5 @@
 // Merchant self-service: sign-up (POST /api/merchants/register), business & KYC, settlement account
-// and direct-mode payment gateway. Secrets never leave the server:
+// and the merchant's default payment store (events may override it: MerchantEventService.savePayment). Secrets never leave the server:
 //   · owner password → bcrypt only
 //   · settlement account / wallet number → Envelope ciphertext + last 4 (shown masked)
 //   · gateway secrets (SSLCOMMERZ store password, bKash app secret / username / password) → Envelope JSON,
@@ -20,6 +20,8 @@ const MerchantGatewayCredential = use('App/Models/MerchantGatewayCredential');
 const MerchantAgreementAcceptance = use('App/Models/MerchantAgreementAcceptance');
 const CmsPage = use('App/Models/CmsPage');
 const Envelope = use('App/Security/Envelope');
+const Creds = use('App/Services/GatewayCredentialService');
+const Sslcommerz = use('App/Gateways/SslcommerzGateway');
 const IpResolver = use('App/Security/IpResolver');
 const SettingsService = use('App/Services/SettingsService');
 const SessionService = use('App/Services/SessionService');
@@ -36,11 +38,6 @@ const masked = (last4) => (last4 ? `••••${last4}` : '');
 const isMask = (v) => typeof v === 'string' && v.startsWith('••••');
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const settleAad = (merchantId) => `settlement:${merchantId}`;
-const gwAad = (merchantId, gateway) => `merchant_gateway:${merchantId}:${gateway}`;
-const GATEWAYS = {
-    sslcommerz: { publicId: 'storeId', secrets: ['storePassword'] },
-    bkash: { publicId: 'appKey', secrets: ['appSecret', 'username', 'password'] },
-};
 
 async function lookupCode(group, label, fallback) {
     const l = String(label || '').trim();
@@ -99,26 +96,7 @@ async function saveSettlement(merchantId, s, current) {
 }
 
 /** Store direct-mode credentials; returns the list of changed secret fields (names only). */
-async function saveGateway(ctx, merchantId, gateway, v = {}) {
-    const f = GATEWAYS[gateway];
-    const cur = await MerchantGatewayCredential.where('merchant_id', merchantId).where('gateway', gateway).first();
-    const publicId = str(v[f.publicId], 120);
-    const typed = f.secrets.filter((k) => typeof v[k] === 'string' && v[k] !== '' && v[k] !== MASK);
-    if (!cur && !publicId && !typed.length) return [];
-    const patch = { public_id: publicId || cur?.public_id || null, sandbox: v.sandbox === false ? 0 : 1, updated_by: ctx.user?.id || null };
-    if (typed.length) {
-        const secrets = cur?.secret_ciphertext ? Envelope.decryptJson(cur.secret_ciphertext, gwAad(merchantId, gateway)) : {};
-        for (const k of typed) secrets[k] = String(v[k]).slice(0, 500);
-        const { ciphertext, keyVersion } = Envelope.encryptJson(secrets, gwAad(merchantId, gateway));
-        Object.assign(patch, { secret_ciphertext: ciphertext, key_version: keyVersion, secret_last4: null });
-    }
-    // Any change to the account invalidates an earlier successful connection test.
-    if (typed.length || patch.public_id !== cur?.public_id || Number(patch.sandbox) !== Number(cur?.sandbox ?? 1)) patch.verified_at = null;
-    if (cur) await MerchantGatewayCredential.where('id', cur.id).update({ ...patch, updated_at: new Date() });
-    else await MerchantGatewayCredential.create({ merchant_id: merchantId, gateway, ...patch });
-    if (typed.length) SecurityEventService.record(ctx, 'secret_rotated', { details: { scope: 'merchant_gateway', gateway, merchant_id: merchantId, fields: typed } });
-    return typed.map((k) => `${gateway}.${k}`);
-}
+const saveGateway = (ctx, merchantId, gateway, values) => (values ? Creds.save(ctx, { scope: 'merchant', ownerId: merchantId, merchantId, gateway, values }) : []);
 
 async function attachDocs(ctx, merchantId, docs = []) {
     if (!docs.length) return 0;
@@ -150,13 +128,7 @@ const MerchantAccountService = {
                 .select('d.id', 'd.status', 't.name as type', 'md.original_name as name', 'md.bytes').where('d.merchant_id', m.id).orderBy('d.id').get(),
             MerchantGatewayCredential.select('gateway', 'public_id', 'secret_ciphertext', 'sandbox', 'verified_at').where('merchant_id', m.id).get(),
         ]);
-        const gw = (g) => {
-            const c = creds.find((x) => x.gateway === g);
-            if (!c) return undefined;
-            const base = { [GATEWAYS[g].publicId]: c.public_id || '', sandbox: !!c.sandbox, verifiedAt: c.verified_at || null };
-            for (const k of GATEWAYS[g].secrets) base[k] = c.secret_ciphertext ? MASK : '';
-            return base;
-        };
+        const gw = (g) => Creds.view(creds.find((x) => x.gateway === g), g) || undefined;
         return {
             id: m.uuid, name: m.name, slug: m.slug, type: typeLabel?.label || m.business_type, businessType: m.business_type,
             status: m.status, statusNote: m.status_note, commissionPct: Number(m.commission_pct), kycStatus: m.kyc_status, settlementCycle: m.settlement_cycle,
@@ -167,7 +139,7 @@ const MerchantAccountService = {
                 type: account.type, bankName: account.bank_name || '', accountName: account.account_name || '', routing: account.routing || '', branch: account.branch || '',
                 accountNo: account.type === 'bank' ? masked(account.account_no_last4) : '', wallet: account.type === 'mfs' ? masked(account.account_no_last4) : '', cycle: m.settlement_cycle,
             } : { type: 'bank', cycle: m.settlement_cycle },
-            pg: { mode: m.pg_mode, sslcommerz: gw('sslcommerz'), bkash: gw('bkash') },
+            pg: { mode: 'direct', sslcommerzMode: Sslcommerz.mode(), sslcommerz: gw('sslcommerz'), bkash: gw('bkash') },
         };
     },
 
@@ -187,15 +159,13 @@ const MerchantAccountService = {
         if (block) { await BlockService.hit(block, ctx).catch(() => {}); forbid('Registration from this account or network is restricted. Contact support.', 'blocked'); }
         if (await User.withTrashed().where('type', 'merchant_staff').where('email', email).exists()) bad('An account with this email already exists — sign in instead');
 
-        const [auto, commission, allowDirect, ownerRole, agreement] = await Promise.all([
+        const [auto, commission, ownerRole, agreement] = await Promise.all([
             SettingsService.get('platform', 'merchant_auto_approve', false),
             SettingsService.get('platform', 'default_commission_pct', 8),
-            SettingsService.get('platform', 'allow_merchant_direct_pg', true),
             Role.select('id').where('scope', 'merchant').where('slug', 'owner').whereNull('merchant_id').first(),
             CmsPage.select('current_version_id').where('slug', 'merchant-agreement').first(),
         ]);
         if (!ownerRole) throw new Error('Merchant owner role is missing — run the RBAC seeder');
-        if (pg.mode === 'direct' && !allowDirect) bad('Direct gateway connection is disabled by the platform');
         const businessType = await lookupCode('business_types', business.type, 'event-organiser');
         const hash = await bcrypt.hash(password, 12);
         const now = new Date();
@@ -206,18 +176,16 @@ const MerchantAccountService = {
             const m = await Merchant.create({
                 uuid: uuid(), name: biz.name, slug, business_type: businessType, status: auto ? 'active' : 'pending', commission_pct: Number(commission),
                 legal_name: biz.legal_name || biz.name, trade_license: biz.trade_license, tin: biz.tin || null, bin: biz.bin || null, address: biz.address || null, website: biz.website || null,
-                contact_name: name, contact_email: email, contact_phone: phone, pg_mode: 'platform',
+                contact_name: name, contact_email: email, contact_phone: phone, pg_mode: 'direct',
                 kyc_status: auto ? 'verified' : 'submitted', kyc_submitted_at: now, settlement_cycle: 'weekly',
             });
             const u = await User.create({ uuid: uuid(), type: 'merchant_staff', name, email, password_hash: hash, status: 'active', merchant_id: m.id });
             await UserRole.create({ user_id: u.id, role_id: ownerRole.id, merchant_id: m.id, granted_by: null, granted_at: now });
             await saveSettlement(m.id, settlement, null);
             await attachDocs(ctx, m.id, docs); // uploads made by this visitor (signed-out uploads have no owner)
-            if (pg.mode === 'direct') {
-                await saveGateway({ ...ctx, user: u }, m.id, 'sslcommerz', pg.sslcommerz);
-                await saveGateway({ ...ctx, user: u }, m.id, 'bkash', pg.bkash);
-                await Merchant.where('id', m.id).update({ pg_mode: 'direct' });
-            }
+            // Optional at sign-up; publishing an event needs a verified store (the default or the event's own).
+            await saveGateway({ ...ctx, user: u }, m.id, 'sslcommerz', pg.sslcommerz);
+            await saveGateway({ ...ctx, user: u }, m.id, 'bkash', pg.bkash);
             if (agreement?.current_version_id) {
                 await MerchantAgreementAcceptance.create({ merchant_id: m.id, user_id: u.id, page_version_id: agreement.current_version_id, accepted_at: now, ip: ctx.ip ? IpResolver.toBinary(ctx.ip) : null, user_agent: ctx.userAgent ? String(ctx.userAgent).slice(0, 512) : null });
             }
@@ -227,7 +195,7 @@ const MerchantAccountService = {
         if (ctx.session) await SessionService.revoke(ctx.session.id, 'relogin');
         await SessionService.create(expressRes, user, ctx, { mfaPassed: true });
         const actor = { ...ctx, user };
-        await AuditService.record(actor, 'MERCHANT_REGISTERED', { type: 'merchant', id: merchant.id, label: merchant.name }, { meta: { status: merchant.status, docs: docs.length, pg: pg.mode || 'platform' }, merchantId: merchant.id });
+        await AuditService.record(actor, 'MERCHANT_REGISTERED', { type: 'merchant', id: merchant.id, label: merchant.name }, { meta: { status: merchant.status, docs: docs.length, store: !!pg.sslcommerz?.storeId }, merchantId: merchant.id });
         return { user, merchant: await MerchantAccountService.view(merchant.id) };
     },
 
@@ -262,46 +230,30 @@ const MerchantAccountService = {
         return MerchantAccountService.view(m.id);
     },
 
-    async updatePaymentSettings(ctx, { mode, sslcommerz, bkash } = {}) {
+    /** Default store for all of this merchant's events (an event can set its own). */
+    async updatePaymentSettings(ctx, { sslcommerz, bkash } = {}) {
         Access.need(ctx, 'merchant.gateway.manage');
         const m = await Merchant.where('id', ctx.merchantId).first() || missing('Merchant not found');
-        if (mode && !['platform', 'direct'].includes(mode)) bad('Unknown collection mode');
-        if (mode === 'direct' && !(await SettingsService.get('platform', 'allow_merchant_direct_pg', true))) bad('Direct gateway connection is disabled by the platform');
+        if (sslcommerz && !String(sslcommerz.storeId || '').trim()) bad('Enter your SSLCOMMERZ Store ID');
         const changed = [];
         await Db.transaction(async () => {
-            if (sslcommerz) changed.push(...await saveGateway(ctx, m.id, 'sslcommerz', sslcommerz));
-            if (bkash) changed.push(...await saveGateway(ctx, m.id, 'bkash', bkash));
-            if (mode === 'direct') {
-                const c = await MerchantGatewayCredential.where('merchant_id', m.id).where('gateway', 'sslcommerz').first();
-                if (!c?.public_id || !c.secret_ciphertext) bad('Enter your SSLCOMMERZ Store ID and Store Password to collect directly');
-            }
-            if (mode && mode !== m.pg_mode) await Merchant.where('id', m.id).update({ pg_mode: mode, updated_at: new Date() });
+            changed.push(...await saveGateway(ctx, m.id, 'sslcommerz', sslcommerz));
+            changed.push(...await saveGateway(ctx, m.id, 'bkash', bkash));
         });
-        await AuditService.record(ctx, 'PG_SETTINGS_UPDATED', { type: 'merchant', id: m.id, label: m.name }, { before: { mode: m.pg_mode }, after: { mode: mode || m.pg_mode }, meta: { secretsChanged: changed }, merchantId: m.id });
+        await AuditService.record(ctx, 'PG_SETTINGS_UPDATED', { type: 'merchant', id: m.id, label: m.name }, { meta: { scope: 'merchant_default', secretsChanged: changed }, merchantId: m.id });
         return MerchantAccountService.view(m.id);
     },
 
-    /** Opens a real (sandbox or live) session with the merchant's own credentials; nothing is charged. */
+    /** Opens a real (sandbox or live) session with the merchant's default store; nothing is charged. */
     async testConnection(ctx, { gateway = 'sslcommerz' } = {}) {
         Access.need(ctx, 'merchant.gateway.manage');
         if (gateway !== 'sslcommerz') return { ok: false, message: 'bKash direct checkout is not available yet — use SSLCOMMERZ (it includes bKash).' };
         const m = await Merchant.where('id', ctx.merchantId).first() || missing('Merchant not found');
-        const resolved = await use('App/Services/GatewayCredentialService').resolve(ctx, { gateway, merchantId: m.id, pgMode: 'direct' });
+        const resolved = await Creds.resolve(ctx, { gateway, merchantId: m.id, source: 'merchant', checkEnabled: false });
         if (!resolved) bad('Enter Store ID and Store Password first');
-        const cb = `${config('ticketo').publicUrl}/api/pg/sslcommerz`;
-        let result;
-        try {
-            await use('App/Gateways/SslcommerzGateway').init({
-                creds: resolved.creds, tranId: `TEST-${m.uuid.slice(0, 8)}-${Date.now()}`, amount: 10, itemCount: 1, productName: 'Ticketo connection test',
-                contact: { name: m.contact_name || m.name, email: m.contact_email || 'test@example.com', phone: m.contact_phone || '01700000000' },
-                urls: { success: `${cb}/test`, fail: `${cb}/test`, cancel: `${cb}/test`, ipn: null }, refs: { order: 'connection-test', merchant: m.uuid, event: 'none' },
-            });
-            await MerchantGatewayCredential.where('merchant_id', m.id).where('gateway', gateway).update({ verified_at: new Date(), updated_at: new Date() });
-            result = { ok: true, message: `Connected — SSLCOMMERZ ${resolved.creds.sandbox !== false ? 'sandbox' : 'live'} store accepted the credentials.` };
-        } catch (e) {
-            result = { ok: false, message: `SSLCOMMERZ rejected the credentials: ${use('App/Security/Redactor').errorMessage(e.message).slice(0, 160)}` };
-        }
-        await AuditService.record(ctx, result.ok ? 'PG_VERIFIED' : 'PG_VERIFY_FAILED', { type: 'merchant', id: m.id, label: m.name }, { meta: { gateway }, merchantId: m.id });
+        const result = await Sslcommerz.test(resolved.creds, { callbackBase: `${config('ticketo').publicUrl}/api/pg/sslcommerz`, merchantRef: m.uuid });
+        if (result.ok) await Creds.markVerified('merchant', m.id, gateway);
+        await AuditService.record(ctx, result.ok ? 'PG_VERIFIED' : 'PG_VERIFY_FAILED', { type: 'merchant', id: m.id, label: m.name }, { meta: { gateway, scope: 'merchant_default' }, merchantId: m.id });
         return result;
     },
 };
