@@ -15,19 +15,19 @@ Route.get('/events/{slug}', 'EventController@show');
 
 // Partner & staff sign-in (merchant staff + CMS). Throttled per IP; login-scope blocks apply
 // (IP/device/email); failures feed security_events → auto-block rules.
-Route.post('/auth/login', 'AuthController@login').middleware(['block:login', 'throttle:10,15']);
-Route.post('/auth/mfa', 'AuthController@mfa').middleware(['block:login', 'throttle:6,5,user']);
+Route.post('/auth/login', 'AuthController@login').middleware(['block:login', 'throttle:100,1']);
+Route.post('/auth/mfa', 'AuthController@mfa').middleware(['block:login', 'throttle:60,1,user']);
 Route.post('/auth/logout', 'AuthController@logout');
 // Staff set their own password from the one-time invite / reset link (only its hash is stored).
 Route.post('/auth/password/setup', 'AuthController@setPassword').middleware(['block:login', 'throttle:10,15']);
 
 // Customer sign-in by SMS code. IP- and phone-throttled on top of the per-phone cooldown in the service;
 // wrong codes feed the otp_failed auto-block rules.
-Route.post('/auth/otp', 'AuthController@otp').middleware(['block:login', 'throttle:10,15', 'throttle:5,15,phone']);
-Route.post('/auth/otp/verify', 'AuthController@otpVerify').middleware(['block:login', 'throttle:20,15', 'throttle:10,15,phone']);
+Route.post('/auth/otp', 'AuthController@otp').middleware(['block:login', 'throttle:10,15', 'throttle:15,15,phone']);
+Route.post('/auth/otp/verify', 'AuthController@otpVerify').middleware(['block:login', 'throttle:150,15', 'throttle:10,15,phone']);
 
 // The signed-in user's own profile and bookings.
-Route.patch('/me', 'MeController@update').middleware(['auth', 'throttle:20,1']);
+Route.patch('/me', 'MeController@update').middleware(['auth', 'throttle:40,1']);
 Route.get('/me/orders', 'MeController@orders').middleware(['auth:customer']);
 Route.post('/orders/{orderId}/refund-request', 'MeController@refund').middleware(['auth:customer,cms', 'throttle:10,1']);
 Route.post('/orders/{orderId}/transfer', 'MeController@transfer').middleware(['auth:customer', 'throttle:10,1']);
