@@ -40,7 +40,7 @@ export default function Header() {
         <div className="ml-auto flex items-center gap-2 sm:gap-4">
           <button onClick={() => setSearchOpen(true)} className="p-2 md:hidden" aria-label="Search"><Icon name="Search" size={20} /></button>
           <button onClick={() => setCityOpen(true)} className="flex items-center gap-1 text-sm text-ink-800"><span className="max-w-[90px] truncate">{cityName}</span><Icon name="ChevronDown" size={15} /></button>
-          {!user && <Link href={`/login?next=${encodeURIComponent(pathname)}`} className="btn-primary h-8 px-4 text-xs">Sign in</Link>}
+          {!user && <Link href={`/login?next=${encodeURIComponent(pathname)}`} className="btn-primary h-8 shrink-0 whitespace-nowrap px-4 text-xs">Sign in</Link>}
           <button onClick={() => setDrawer(true)} className="flex items-center gap-2" aria-label="Menu">
             {user && <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-800 text-sm font-semibold text-white">{(user.name || 'U')[0]}</span>}
             <Icon name="Menu" size={22} />
@@ -66,7 +66,10 @@ export default function Header() {
           <aside onClick={(e) => e.stopPropagation()} className="ml-auto flex h-full w-full max-w-sm animate-fadein flex-col overflow-y-auto bg-white">
             <div className="flex items-center justify-between bg-ink-800 px-5 py-5 text-white">
               <div><div className="text-lg font-semibold">Hey{user ? `, ${(user.name || '').split(' ')[0]}` : '!'}</div><span className="text-xs text-white/70">{staff ? `${staff.role === 'admin' ? 'Platform admin' : merchant?.name}` : customer ? customer.phone : 'Sign in for rewards & faster checkout'}</span></div>
-              {!user && <Link href="/login" className="btn-primary h-8 px-4 text-xs">Login</Link>}
+              <div className="flex items-center gap-3">
+                {!user && <Link href="/login" className="btn-primary h-8 whitespace-nowrap px-4 text-xs">Login</Link>}
+                <button onClick={() => setDrawer(false)} aria-label="Close menu" className="-mr-2 p-2 text-white/80 hover:text-white"><Icon name="X" size={22} /></button>
+              </div>
             </div>
             {customer && <Link href="/profile?tab=rewards" className="mx-4 mt-4 flex items-center gap-3 rounded-xl bg-gradient-to-r from-amber-100 to-brand-50 p-3"><Icon name="Crown" size={22} className="text-amber-500" /><div className="text-sm"><b>{tierFor(prefs.lifetimePoints).name} member</b><div className="text-ink-500">{prefs.points.toLocaleString()} points</div></div></Link>}
             <ul className="mt-2 divide-y divide-ink-100 px-2 text-[15px]">
