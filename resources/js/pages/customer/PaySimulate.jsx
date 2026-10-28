@@ -3,12 +3,13 @@ import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Icon from '@/components/Icon';
 import { Loading, ErrorState } from '@/components/States';
-import { api } from '@/lib/api';
+import { flow } from '@/lib/bookingApi';
 import { useApi, useStore } from '@/lib/store';
 import { bdt } from '@/lib/utils';
 
 export default function PaySimulate() {
-  const { orderId } = useParams();
+  const { orderId, token } = useParams();
+  const { api, base } = flow(token);
   const [sp] = useSearchParams();
   const nav = useNavigate();
   const { config } = useStore();
@@ -24,7 +25,7 @@ export default function PaySimulate() {
   const finish = async (outcome) => {
     setBusy(true);
     const r = await api.simulatePayment({ orderId, outcome });
-    nav(r.status === 'paid' ? `/booking/${orderId}?new=1` : `/payment/${orderId}?failed=${outcome}&m=${m.id}`, { replace: true });
+    nav(r.status === 'paid' ? `${base}/booking/${orderId}?new=1` : `${base}/payment/${orderId}?failed=${outcome}&m=${m.id}`, { replace: true });
   };
   return (
     <div className="flex min-h-screen items-start justify-center bg-ink-100 px-4 py-10">

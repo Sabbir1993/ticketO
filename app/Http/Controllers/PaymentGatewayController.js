@@ -4,7 +4,8 @@ const OrderService = use('App/Services/OrderService');
 // SSLCOMMERZ callbacks. The posted body is NEVER trusted: success and IPN are re-validated with the
 // Validation API (amount, currency, tran_id) before anything is marked paid. Browsers are sent back
 // to the SPA with a 303 so a refresh cannot re-POST.
-const spa = (path) => `${config('ticketo').publicUrl}${path}`;
+// `base` is '/embed/<token>' for embedded orders, so the browser returns inside the embed.
+const spa = (base, path) => `${config('ticketo').publicUrl}${base}${path}`;
 const field = (body, k) => (body && body[k] !== undefined ? String(body[k]).slice(0, 120) : '');
 
 class PaymentGatewayController extends Controller {
@@ -13,7 +14,8 @@ class PaymentGatewayController extends Controller {
         let r;
         try { r = await OrderService.sslcommerzValidated(req.ctx, { orderUuid: orderId, tranId: field(body, 'tran_id'), valId: field(body, 'val_id'), source: 'redirect' }); }
         catch { r = { ok: false, orderUuid: orderId, reason: 'error' }; }
-        return res.res.redirect(303, r.ok ? spa(`/booking/${encodeURIComponent(orderId)}?new=1`) : spa(`/payment/${encodeURIComponent(orderId)}?failed=${encodeURIComponent(r.reason || 'failed')}`));
+        const base = await OrderService.embedBase(orderId);
+        return res.res.redirect(303, r.ok ? spa(base, `/booking/${encodeURIComponent(orderId)}?new=1`) : spa(base, `/payment/${encodeURIComponent(orderId)}?failed=${encodeURIComponent(r.reason || 'failed')}`));
     }
 
     async fail(orderId, req, res) { return this.back(orderId, req, res, 'fail'); }
@@ -22,7 +24,8 @@ class PaymentGatewayController extends Controller {
     async back(orderId, req, res, kind) {
         const body = req.all();
         await OrderService.sslcommerzFailed(req.ctx, { orderUuid: orderId, tranId: field(body, 'tran_id'), kind, payload: { status: field(body, 'status'), error: field(body, 'error'), tran_id: field(body, 'tran_id') } }).catch(() => {});
-        return res.res.redirect(303, spa(`/payment/${encodeURIComponent(orderId)}?failed=${kind}`));
+        const base = await OrderService.embedBase(orderId);
+        return res.res.redirect(303, spa(base, `/payment/${encodeURIComponent(orderId)}?failed=${kind}`));
     }
 
     // Server-to-server IPN — idempotent with the success redirect (order row lock in OrderService.complete).

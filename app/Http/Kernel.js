@@ -22,6 +22,7 @@ class HttpKernel extends BaseKernel {
         // Global middleware, in order. Runs for every non-static request.
         this.middleware = [
             require('./Middleware/RequestContext'),
+            require('./Middleware/MobileGuard'),
             require('./Middleware/RequestLogger'),
             require('./Middleware/BlockGuard'),
         ];
@@ -48,11 +49,12 @@ class HttpKernel extends BaseKernel {
         const sec = config('ticketo.security');
         const isProd = env('APP_ENV') === 'production';
         const viteDev = config('ticketo.viteDevUrl');
+        const EmbedService = use('App/Services/EmbedService');
 
         app.disable('x-powered-by');
         app.set('trust proxy', false);
 
-        const csp = (extraScripts = [], inlineHandlers = false) => helmet({
+        const csp = (extraScripts = [], inlineHandlers = false, frameAncestors = ["'none'"], embed = false) => helmet({
             contentSecurityPolicy: {
                 useDefaults: true,
                 directives: {
@@ -64,17 +66,24 @@ class HttpKernel extends BaseKernel {
                     'img-src': ["'self'", 'data:', 'blob:'],
                     'connect-src': ["'self'", ...(isProd ? [] : [viteDev, viteDev.replace(/^http/, 'ws')])],
                     'form-action': ["'self'", 'https://sandbox.sslcommerz.com', 'https://securepay.sslcommerz.com'],
-                    'frame-ancestors': ["'none'"],
+                    'frame-ancestors': frameAncestors,
                     'upgrade-insecure-requests': isProd ? [] : null,
                 },
             },
             strictTransportSecurity: isProd ? { maxAge: 31536000, includeSubDomains: true } : false,
             crossOriginEmbedderPolicy: false,
+            ...(embed ? { frameguard: false } : {}), // embed pages must not send X-Frame-Options
         });
         const siteCsp = csp();
         // The framework log viewer page (/logs, dev only, CMS staff only) uses onclick= handlers.
         const logViewerCsp = isProd ? siteCsp : csp([], true);
-        app.use((req, res, next) => (req.path === '/logs' ? logViewerCsp : siteCsp)(req, res, next));
+        // /embed/:token: framable only by the sites the merchant signed into that link. Everything else stays frame-ancestors 'none'.
+        app.use((req, res, next) => {
+            if (req.path === '/logs') return logViewerCsp(req, res, next);
+            if (!req.path.startsWith('/embed/')) return siteCsp(req, res, next);
+            const origins = EmbedService.frameOrigins(req.path.split('/')[2]);
+            return (origins.length ? csp([], false, origins, true) : siteCsp)(req, res, next);
+        });
 
         // CORS: explicit allow-list only (same-origin SPA needs none).
         app.use((req, res, next) => {

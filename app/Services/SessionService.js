@@ -7,21 +7,19 @@ const AuthSession = use('App/Models/AuthSession');
 const User = use('App/Models/User');
 const Hasher = use('App/Security/Hasher');
 const IpResolver = use('App/Security/IpResolver');
+const { cookieBase } = use('App/Support/CookiePolicy');
 
 const cfg = () => config('ticketo.session');
-const prod = () => env('APP_ENV') === 'production';
 const idleMinutes = (guard) => (guard === 'cms' ? cfg().cmsIdleMinutes : cfg().idleMinutes);
 const guardFor = (user) => ({ customer: 'customer', merchant_staff: 'merchant', cms: 'cms' }[user.type]);
 
-function cookieOpts(httpOnly, maxAgeMs) {
-    return { httpOnly, secure: prod(), sameSite: 'lax', path: '/', maxAge: maxAgeMs };
-}
+const cookieOpts = (httpOnly, maxAgeMs) => cookieBase(httpOnly, maxAgeMs);
 
 const SessionService = {
     guardFor,
 
     /** Issue a fresh session + CSRF cookie on `res` (raw express response). */
-    async create(res, user, ctx, { mfaPassed = false } = {}) {
+    async create(res, user, ctx, { mfaPassed = false, client = 'web' } = {}) {
         const token = Hasher.token(32);
         const csrf = Hasher.token(24);
         const guard = guardFor(user);
@@ -29,7 +27,7 @@ const SessionService = {
         const expires = new Date(now.getTime() + cfg().lifetimeDays * 86400000);
         const idle = new Date(now.getTime() + idleMinutes(guard) * 60000);
         const session = await AuthSession.create({
-            user_id: user.id, guard, token_hash: Hasher.hash(token, 'session'), csrf_hash: Hasher.hash(csrf, 'csrf'),
+            user_id: user.id, guard, client, token_hash: Hasher.hash(token, 'session'), csrf_hash: Hasher.hash(csrf, 'csrf'),
             mfa_passed: mfaPassed ? 1 : 0, ip: ctx?.ip ? IpResolver.toBinary(ctx.ip) : null, user_agent: ctx?.userAgent ? String(ctx.userAgent).slice(0, 512) : null,
             device_hash: ctx?.deviceHash || null, created_at: now, last_seen_at: now, idle_expires_at: idle, expires_at: expires,
         });
@@ -46,7 +44,7 @@ const SessionService = {
         if (!token || token.length > 128) return null;
         const now = new Date();
         const row = await DB.table('auth_sessions as s').join('users as u', 'u.id', '=', 's.user_id')
-            .select('s.id as session_id', 's.guard', 's.csrf_hash', 's.mfa_passed', 's.last_seen_at', 's.idle_expires_at', 's.expires_at',
+            .select('s.id as session_id', 's.guard', 's.client', 's.csrf_hash', 's.mfa_passed', 's.last_seen_at', 's.idle_expires_at', 's.expires_at',
                 'u.id', 'u.uuid', 'u.type', 'u.name', 'u.email', 'u.phone', 'u.status', 'u.merchant_id', 'u.mfa_enabled')
             .where('s.token_hash', Hasher.hash(token, 'session')).whereNull('s.revoked_at')
             .where('s.expires_at', '>', now).where('s.idle_expires_at', '>', now).whereNull('u.deleted_at')
@@ -58,8 +56,8 @@ const SessionService = {
             const capped = new Date(Math.min(idle.getTime(), new Date(row.expires_at).getTime())); // never past the absolute lifetime
             await AuthSession.where('id', row.session_id).update({ last_seen_at: now, idle_expires_at: capped });
         }
-        const { session_id, guard, csrf_hash, mfa_passed, last_seen_at, idle_expires_at, expires_at, ...user } = row;
-        return { session: { id: session_id, guard, csrfHash: csrf_hash, mfaPassed: !!mfa_passed }, user: { ...user, mfa_enabled: !!user.mfa_enabled } };
+        const { session_id, guard, client, csrf_hash, mfa_passed, last_seen_at, idle_expires_at, expires_at, ...user } = row;
+        return { session: { id: session_id, guard, client, csrfHash: csrf_hash, mfaPassed: !!mfa_passed }, user: { ...user, mfa_enabled: !!user.mfa_enabled } };
     },
 
     /** Double-submit CSRF check; when signed in, the token must also match the session. */

@@ -2,7 +2,7 @@ const Model = use('laranode/Database/Loquent/Model');
 
 class Order extends Model {
     static table = 'orders';
-    static fillable = ['uuid', 'booking_ref', 'hold_id', 'user_id', 'merchant_id', 'event_id', 'show_id', 'venue_id', 'channel', 'status', 'contact_name', 'contact_phone', 'contact_email', 'subtotal', 'discount', 'fee', 'fee_ex_vat', 'vat', 'total', 'commission_pct', 'commission', 'merchant_net', 'promo_id', 'promo_code', 'pg_mode', 'guest_access_hash', 'operator_id', 'pos_method', 'pos_tendered', 'created_ip', 'paid_at'];
+    static fillable = ['uuid', 'booking_ref', 'hold_id', 'user_id', 'merchant_id', 'event_id', 'show_id', 'venue_id', 'channel', 'embed_return', 'status', 'contact_name', 'contact_phone', 'contact_email', 'subtotal', 'discount', 'fee', 'fee_ex_vat', 'vat', 'total', 'commission_pct', 'commission', 'merchant_net', 'promo_id', 'promo_code', 'pg_mode', 'guest_access_hash', 'operator_id', 'pos_method', 'pos_tendered', 'created_ip', 'paid_at'];
     static hidden = ['guest_access_hash']; // never serialised
 
     items() { return this.hasMany(use('App/Models/OrderItem'), 'order_id'); }

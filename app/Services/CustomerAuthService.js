@@ -65,7 +65,7 @@ const CustomerAuthService = {
     },
 
     /** @returns {{ user, isNew }} and sets the session cookies on `expressRes`. */
-    async verifyOtp(ctx, expressRes, { phone, otp } = {}) {
+    async verifyOtp(ctx, expressRes, { phone, otp } = {}, { client = 'web' } = {}) {
         const p = BlockService.normPhone(phone) || bad('Enter a valid Bangladeshi mobile number');
         const code = String(otp || '').trim();
         if (!/^\d{6}$/.test(code)) bad('Enter the 6-digit code');
@@ -98,7 +98,7 @@ const CustomerAuthService = {
         }
         // Fresh session on every sign-in (no fixation).
         if (ctx.session) await SessionService.revoke(ctx.session.id, 'relogin');
-        await SessionService.create(expressRes, user, ctx, { mfaPassed: true });
+        await SessionService.create(expressRes, user, ctx, { mfaPassed: true, client });
         await AuditService.record({ ...ctx, user }, 'LOGIN', { type: 'user', id: user.id, label: p }, { meta: { guard: 'customer', method: 'otp' } });
         return { user, isNew: !user.name };
     },

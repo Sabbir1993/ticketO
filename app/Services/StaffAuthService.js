@@ -10,6 +10,7 @@ const MfaFactor = use('App/Models/MfaFactor');
 const Envelope = use('App/Security/Envelope');
 const Totp = use('App/Security/Totp');
 const SessionService = use('App/Services/SessionService');
+const MobileAccessService = use('App/Services/MobileAccessService');
 const SettingsService = use('App/Services/SettingsService');
 const SecurityEventService = use('App/Services/SecurityEventService');
 const AuditService = use('App/Services/AuditService');
@@ -40,15 +41,16 @@ async function startEnrolment(user) {
 
 const StaffAuthService = {
     /** @returns {{ done: true, user } | { done: false, mfa: 'verify' } | { done: false, mfa: 'enroll', secret, otpauthUrl }} */
-    async login(ctx, expressRes, { email, password } = {}) {
+    async login(ctx, expressRes, { email, password } = {}, { client = 'web' } = {}) {
         const mail = String(email || '').trim().toLowerCase().slice(0, 190);
         const pw = String(password || '');
         if (!mail || !pw) bad('Enter your email and password');
         if (pw.length > 200) unauthorized(WRONG, 'auth');
 
         // A CMS account wins if the same email also exists as merchant staff.
+        // The mobile app never sees CMS accounts: they fail exactly like an unknown email.
         const accounts = await User.select('id', 'uuid', 'type', 'name', 'email', 'phone', 'password_hash', 'status', 'merchant_id', 'mfa_enabled', 'failed_logins', 'locked_until')
-            .where('email', mail).whereIn('type', ['cms', 'merchant_staff']).get();
+            .where('email', mail).whereIn('type', client === 'mobile' ? ['merchant_staff'] : ['cms', 'merchant_staff']).get();
         const user = accounts.find((u) => u.type === 'cms') || accounts[0] || null;
 
         const ok = await bcrypt.compare(pw, user?.password_hash || DUMMY_HASH);
@@ -75,10 +77,16 @@ const StaffAuthService = {
             forbid('Your organisation’s account is not active. Contact Ticketo support.', 'merchant_inactive');
         }
 
+        // Mobile: owners, managers and custom admin-like roles are refused BEFORE any session or MFA seed exists.
+        if (client === 'mobile' && !(await MobileAccessService.allowedUser(user))) {
+            SecurityEventService.record(ctx, 'permission_denied', { email: mail, userId: user.id, details: { reason: 'mobile_forbidden' } });
+            forbid('This account cannot use the mobile app.', 'mobile_forbidden');
+        }
+
         // Fresh session on every sign-in (no fixation); any session carried by this browser is revoked.
         if (ctx.session) await SessionService.revoke(ctx.session.id, 'relogin');
         const mfa = await needsMfa(user);
-        const session = await SessionService.create(expressRes, user, ctx, { mfaPassed: !mfa });
+        const session = await SessionService.create(expressRes, user, ctx, { mfaPassed: !mfa, client });
         const actor = { ...ctx, user, session: { id: session.id } };
 
         if (!mfa) {

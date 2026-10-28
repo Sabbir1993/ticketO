@@ -13,6 +13,22 @@ Route.get('/auth/me', 'AuthController@me');
 Route.get('/events', 'EventController@index');
 Route.get('/events/{slug}', 'EventController@show');
 
+// Embed links: the signed token is the credential; scope is enforced inside EmbedController.
+Route.get('/embed/{token}', 'EmbedController@show').middleware(['throttle:120,1']);
+Route.get('/embed/{token}/events/{slug}', 'EmbedController@event').middleware(['throttle:120,1']);
+// Embedded booking: the same rules as the public seat-hold / order routes, plus a scope check on every id.
+Route.get('/embed/{token}/shows/{showId}/availability', 'EmbedController@availability').middleware(['throttle:120,1']);
+Route.post('/embed/{token}/holds', 'EmbedController@hold').middleware(['block:checkout', 'throttle:20,1']);
+Route.get('/embed/{token}/holds/{holdId}', 'EmbedController@showHold');
+Route.delete('/embed/{token}/holds/{holdId}', 'EmbedController@releaseHold');
+Route.post('/embed/{token}/holds/{holdId}/quote', 'EmbedController@quote').middleware(['throttle:30,1']);
+Route.post('/embed/{token}/orders', 'EmbedController@order').middleware(['block:checkout', 'throttle:10,1']);
+Route.get('/embed/{token}/orders/{orderId}', 'EmbedController@showOrder').middleware(['throttle:120,1']);
+Route.post('/embed/{token}/orders/{orderId}/pay', 'EmbedController@pay').middleware(['block:checkout', 'throttle:10,1']);
+if (config('ticketo').paymentSimulator && env('APP_ENV') !== 'production') {
+    Route.post('/embed/{token}/orders/{orderId}/simulate', 'EmbedController@simulate').middleware(['throttle:20,1']);
+}
+
 // Partner & staff sign-in (merchant staff + CMS). Throttled per IP; login-scope blocks apply
 // (IP/device/email); failures feed security_events → auto-block rules.
 Route.post('/auth/login', 'AuthController@login').middleware(['block:login', 'throttle:100,1']);
@@ -25,6 +41,15 @@ Route.post('/auth/password/setup', 'AuthController@setPassword').middleware(['bl
 // wrong codes feed the otp_failed auto-block rules.
 Route.post('/auth/otp', 'AuthController@otp').middleware(['block:login', 'throttle:10,15', 'throttle:15,15,phone']);
 Route.post('/auth/otp/verify', 'AuthController@otpVerify').middleware(['block:login', 'throttle:150,15', 'throttle:10,15,phone']);
+
+// Flutter app sign-in. Same flows, but the session is tagged client=mobile and only customers and
+// box-office / gate-only staff can obtain one (MobileAccessService); MobileGuard re-checks every request.
+Route.post('/mobile/auth/otp', 'AuthController@otp').middleware(['block:login', 'throttle:10,15', 'throttle:15,15,phone']);
+Route.post('/mobile/auth/otp/verify', 'AuthController@mobileOtpVerify').middleware(['block:login', 'throttle:150,15', 'throttle:10,15,phone']);
+Route.post('/mobile/auth/login', 'AuthController@mobileLogin').middleware(['block:login', 'throttle:100,1']);
+Route.post('/mobile/auth/mfa', 'AuthController@mfa').middleware(['block:login', 'throttle:60,1,user']);
+Route.post('/mobile/auth/logout', 'AuthController@logout');
+Route.get('/mobile/auth/me', 'AuthController@me');
 
 // The signed-in user's own profile and bookings.
 Route.patch('/me', 'MeController@update').middleware(['auth', 'throttle:40,1']);
@@ -107,6 +132,8 @@ Route.group({ prefix: '/merchant', middleware: ['auth:merchant', 'merchant'] }, 
     Route.delete('/events/{id}', 'MerchantController@destroy').middleware(['permission:merchant.events.manage']);
     Route.get('/orders', 'MerchantController@orders').middleware(['permission:merchant.orders.view']);
     Route.get('/settlement', 'MerchantController@settlement').middleware(['permission:merchant.settlement.view']);
+    Route.get('/embed-links', 'EmbedController@merchantLinks').middleware(['permission:merchant.events.manage']);
+    Route.post('/embed-links', 'EmbedController@createLink').middleware(['permission:merchant.events.manage', 'throttle:30,1,user']);
 });
 
 // Box office and gate (merchant staff).

@@ -5,7 +5,7 @@ import PortalShell, { Stat, Panel, Pill } from '@/components/portal/PortalShell'
 import BarChart, { HBars } from '@/components/BarChart';
 import Poster from '@/components/Poster';
 import Icon from '@/components/Icon';
-import { Loading, Empty } from '@/components/States';
+import { ErrorState, Loading, Empty } from '@/components/States';
 import EventEditor from './EventEditor';
 import PgForm from './PgForm';
 import { api, uploadFile } from '@/lib/api';
@@ -23,6 +23,7 @@ const NAV = [
   { section: 'Settings' },
   { id: 'payments', label: 'Payment gateway', icon: 'Plug' },
   { id: 'business', label: 'Business & KYC', icon: 'Building2' },
+  { id: 'embed', label: 'Embed links', icon: 'Link2' },
   { section: 'Operations' },
   { id: '~pos', label: 'POS box office', icon: 'LayoutGrid' },
   { id: '~gate', label: 'Gate scanner', icon: 'ScanLine' },
@@ -54,8 +55,50 @@ export default function MerchantPortal() {
         <Route path="settlement" element={<Settlement />} />
         <Route path="payments" element={<Payments />} />
         <Route path="business" element={<Business />} />
+        <Route path="embed" element={<EmbedLinks />} />
       </Routes>
     </PortalShell>
+  );
+}
+
+// Read-only links for other apps to show in an iframe. Each one is locked to its merchant or event,
+// and can only be framed by the sites entered for that link.
+function EmbedLinks() {
+  const links = useApi(() => api.merchantEmbedLinks(), []);
+  if (links.loading) return <Loading />;
+  if (links.error) return <ErrorState error={links.error} onRetry={links.reload} />;
+  return (
+    <div className="space-y-6">
+      <Panel title="Whole merchant"><LinkRow label={links.data.merchant.name} body={{ scope: 'merchant' }} /></Panel>
+      <Panel title="Per event">
+        {links.data.events.length ? links.data.events.map((e) => <LinkRow key={e.uuid} label={e.title} body={{ scope: 'event', eventUuid: e.uuid }} />) : <p className="p-4 text-sm text-ink-500">Publish an event to create its link.</p>}
+      </Panel>
+      <p className="text-sm text-ink-500">Enter the sites (https://…, comma separated) that may show each link. Any other site is blocked from showing it. Embed as an iframe: <code>{'<iframe src="LINK" width="100%" height="800"></iframe>'}</code></p>
+    </div>
+  );
+}
+
+function LinkRow({ label, body }) {
+  const { toast } = useStore();
+  const [sites, setSites] = useState('');
+  const [link, setLink] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const generate = async () => {
+    setBusy(true);
+    try { setLink(await api.createEmbedLink({ ...body, origins: sites })); }
+    catch (e) { toast(e.message, 'err'); }
+    finally { setBusy(false); }
+  };
+  const copy = () => navigator.clipboard.writeText(link.url).then(() => toast('Link copied'), () => toast('Copy failed', 'err'));
+  return (
+    <div className="space-y-3 border-b border-ink-100 p-4 last:border-0">
+      <div className="font-medium">{label}</div>
+      <div className="flex flex-wrap gap-2">
+        <input value={sites} onChange={(e) => { setSites(e.target.value); setLink(null); }} placeholder="https://partner.example.com, https://app.example.com" aria-label={`Sites allowed to show ${label}`} className="input min-w-0 flex-1" />
+        <button onClick={generate} disabled={busy || !sites.trim()} className="btn-primary h-11 px-4 text-sm">{link ? 'Refresh link' : 'Get link'}</button>
+      </div>
+      {link && <div className="flex flex-wrap items-center gap-3"><code className="block min-w-0 flex-1 truncate text-xs text-ink-500">{link.url}</code><button onClick={copy} className="btn-ghost h-9 px-3 text-sm"><Icon name="Copy" size={15} />Copy link</button></div>}
+    </div>
   );
 }
 

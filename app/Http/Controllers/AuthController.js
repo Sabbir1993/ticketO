@@ -36,6 +36,23 @@ class AuthController extends Controller {
         return res.json({ mfaRequired: true, mfa: r.mfa, ...(r.mfa === 'enroll' ? { otpauthUrl: r.otpauthUrl, secret: r.secret } : {}) });
     }
 
+    // POST /api/mobile/auth/login — same as login(), mobile-only: staff limited to box-office / gate roles.
+    async mobileLogin(req, res) {
+        const r = await StaffAuthService.login(req.ctx, res.res, req.only(['email', 'password']), { client: 'mobile' });
+        res.header('Cache-Control', 'no-store');
+        if (!r.done) return res.json({ mfaRequired: true, mfa: 'verify' }); // never hand a TOTP seed to the app
+        const rbac = await use('App/Services/RbacService').forUser(r.user);
+        const view = { ...req.ctx, ...rbac, isSuperAdmin: false };
+        return res.json({ user: UserView.user(r.user, view), merchant: await UserView.merchant(r.user.merchant_id) });
+    }
+
+    // POST /api/mobile/auth/otp/verify
+    async mobileOtpVerify(req, res) {
+        const r = await CustomerAuthService.verifyOtp(req.ctx, res.res, req.only(['phone', 'otp']), { client: 'mobile' });
+        res.header('Cache-Control', 'no-store');
+        return res.json({ user: UserView.user(r.user, req.ctx), merchant: null, isNew: r.isNew });
+    }
+
     // POST /api/auth/otp { phone } — customer sign-in, step 1.
     async otp(req, res) {
         res.header('Cache-Control', 'no-store');

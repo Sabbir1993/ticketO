@@ -38,6 +38,7 @@ const SecurityEventService = use('App/Services/SecurityEventService');
 const GatewayCredentialService = use('App/Services/GatewayCredentialService');
 const CatalogService = use('App/Services/CatalogService');
 const HoldService = use('App/Services/HoldService');
+const EmbedService = use('App/Services/EmbedService');
 const Sslcommerz = use('App/Gateways/SslcommerzGateway');
 const { uuid, bookingRef } = use('App/Support/Ids');
 const { HttpError, bad, missing, unauthorized, forbid } = use('App/Support/HttpError');
@@ -118,7 +119,7 @@ async function logPaymentEvent(ctx, { paymentId = null, orderId = null, source, 
 const OrderService = {
     accessible, view,
 
-    async create(ctx, req, { holdId, contact = {}, promoCode } = {}) {
+    async create(ctx, req, { holdId, contact = {}, promoCode, embedReturn = null } = {}) {
         const h = await holdRow(holdId);
         if (!h) bad('Your seat hold expired — please select seats again', 'hold_expired');
         assertOwner(h, ctx, req);
@@ -153,7 +154,7 @@ const OrderService = {
         const orderId = await Db.independent(async () => {
             const { id } = await Order.create({
                 uuid: orderUuid, booking_ref: bookingRef('TK'), hold_id: h.id, user_id: customer?.id || null, merchant_id: event.merchant_id, event_id: event.id,
-                show_id: h.show_id, venue_id: show.venue_id, channel: 'web', status: 'pending_payment',
+                show_id: h.show_id, venue_id: show.venue_id, channel: 'web', embed_return: embedReturn, status: 'pending_payment',
                 contact_name: name, contact_phone: phone, contact_email: email,
                 subtotal: pricing.subtotal, discount: pricing.discount, fee: pricing.fee, fee_ex_vat: pricing.feeExVat, vat: pricing.vat, total: pricing.total,
                 commission_pct: pricing.commissionPct, commission: pricing.commission, merchant_net: pricing.merchantNet,
@@ -401,6 +402,14 @@ const OrderService = {
             await Payment.where('id', p.id).whereIn('status', ['initiated', 'redirected'])
                 .update({ status: kind === 'cancel' ? 'cancelled' : 'failed', error: kind === 'cancel' ? 'Cancelled by customer' : 'Declined', completed_at: new Date() });
         }
+    },
+
+    /** '/embed/<token>' for an order placed inside an embed, '' otherwise. Used for gateway return redirects. */
+    async embedBase(orderUuid) {
+        const o = await DB.table('orders').select('embed_return').where('uuid', String(orderUuid)).first();
+        if (!o?.embed_return) return '';
+        const { s, id, o: origins } = JSON.parse(o.embed_return);
+        return `/embed/${EmbedService.issue(s, id, origins)}`;
     },
 
     logPaymentEvent, simulatorOn,

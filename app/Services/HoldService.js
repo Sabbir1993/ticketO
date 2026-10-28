@@ -24,6 +24,7 @@ const IpResolver = use('App/Security/IpResolver');
 const SettingsService = use('App/Services/SettingsService');
 const PricingService = use('App/Services/PricingService');
 const CatalogService = use('App/Services/CatalogService');
+const { cookieBase } = use('App/Support/CookiePolicy');
 const { uuid } = use('App/Support/Ids');
 const { HttpError, bad, missing, conflict } = use('App/Support/HttpError');
 
@@ -36,7 +37,7 @@ function ensureHolder(req, res) {
     let t = req.cookies?.[HOLDER_COOKIE];
     if (!t || t.length > 64) {
         t = Hasher.token(24);
-        res.cookie(HOLDER_COOKIE, t, { httpOnly: true, secure: env('APP_ENV') === 'production', sameSite: 'lax', path: '/', maxAge: 7 * 86400000 });
+        res.cookie(HOLDER_COOKIE, t, cookieBase(true, 7 * 86400000));
         req.cookies = { ...(req.cookies || {}), [HOLDER_COOKIE]: t };
     }
     return Hasher.hash(t, 'holder');

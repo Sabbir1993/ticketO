@@ -5,13 +5,14 @@ import Icon from '@/components/Icon';
 import QR from '@/components/QR';
 import Poster from '@/components/Poster';
 import { Loading, ErrorState } from '@/components/States';
-import { api } from '@/lib/api';
+import { flow } from '@/lib/bookingApi';
 import { useApi, useStore } from '@/lib/store';
 import { downloadIcs, downloadTicketPdf } from '@/lib/ticketPdf';
 import { bdt, cx, fmtDate, fmtTime, STATUS_LABEL } from '@/lib/utils';
 
 export default function Booking() {
-  const { id } = useParams();
+  const { id, token } = useParams();
+  const { api, base } = flow(token);
   const [sp] = useSearchParams();
   const { toast, prefs, setPrefs, earnPoints } = useStore();
   const { data: o, error, loading, reload } = useApi(() => api.getOrder({ orderId: id }), [id]);
@@ -22,7 +23,7 @@ export default function Booking() {
   }, [o?.status]); // eslint-disable-line
   if (loading) return <Loading />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
-  if (o.status === 'pending_payment') return <div className="container-x py-16 text-center"><p className="text-lg font-medium">Payment not completed yet</p><Link href={`/payment/${o.id}`} className="btn-primary mt-4 h-11 px-6">Complete payment</Link></div>;
+  if (o.status === 'pending_payment') return <div className="container-x py-16 text-center"><p className="text-lg font-medium">Payment not completed yet</p><Link href={`${base}/payment/${o.id}`} className="btn-primary mt-4 h-11 px-6">Complete payment</Link></div>;
   const e = o.event; const t = o.tickets[idx] || {}; const voided = o.status !== 'paid';
   const pdf = async () => { setBusy(true); try { await downloadTicketPdf(o); } finally { setBusy(false); } };
   return (
@@ -69,9 +70,9 @@ export default function Booking() {
               <button onClick={() => toast(`Tickets re-sent to ${o.contact.email}`)} className="flex w-full items-center gap-3 px-5 py-3.5 hover:bg-ink-50"><Icon name="Mail" size={18} className="text-brand-500" />Resend via email</button>
               <button onClick={() => toast(`SMS sent to ${o.contact.phone}`)} className="flex w-full items-center gap-3 px-5 py-3.5 hover:bg-ink-50"><Icon name="MessageSquare" size={18} className="text-brand-500" />Resend via SMS</button>
               <button onClick={() => downloadIcs(o)} className="flex w-full items-center gap-3 px-5 py-3.5 hover:bg-ink-50"><Icon name="CalendarPlus" size={18} className="text-brand-500" />Add to calendar</button>
-              <Link href="/profile?tab=bookings" className="flex w-full items-center gap-3 px-5 py-3.5 hover:bg-ink-50"><Icon name="Settings" size={18} className="text-brand-500" />Manage booking</Link>
+              {!token && <Link href="/profile?tab=bookings" className="flex w-full items-center gap-3 px-5 py-3.5 hover:bg-ink-50"><Icon name="Settings" size={18} className="text-brand-500" />Manage booking</Link>}
             </div>
-            <Link href="/" className="btn-dark h-11 w-full">Continue browsing</Link>
+            <Link href={base || '/'} className="btn-dark h-11 w-full">Continue browsing</Link>
           </div>
         </div>
       </div>

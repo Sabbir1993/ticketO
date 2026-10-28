@@ -19,6 +19,12 @@ module.exports = {
     // Never in production: there, OTP login needs a configured SMS gateway.
     otpSimulator: env('APP_ENV') !== 'production' && String(env('OTP_SIMULATOR', 'true')) === 'true',
 
+    // Embed links: HMAC key (32+ chars). Parent sites are set per link when it is issued. EMBED_ENABLED=true switches cookies to cross-site.
+    embed: {
+        secret: env('EMBED_SECRET', ''),
+        enabled: String(env('EMBED_ENABLED', 'false')).toLowerCase() === 'true',
+    },
+
     security: {
         trustedProxies: list(env('TRUSTED_PROXIES', '127.0.0.1,::1')),
         corsOrigins: list(env('CORS_ALLOWED_ORIGINS', '')),

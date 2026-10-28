@@ -21,6 +21,7 @@ import MerchantPortal from '@/pages/merchant/Portal';
 import AdminConsole from '@/pages/admin/Admin';
 import POS from '@/pages/ops/POS';
 import Gate from '@/pages/ops/Gate';
+import Embed from '@/pages/embed/Embed';
 
 const Router = BrowserRouter;
 
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Route>
           <Route element={<SiteLayout footer={false} />}><Route path="book/:showId" element={<Book />} /></Route>
+          <Route path="embed/:token/*" element={<Embed />} />
           <Route element={<BareLayout />}>
             <Route path="pay/simulate/:orderId" element={<PaySimulate />} />
             <Route path="merchant/*" element={<MerchantPortal />} />

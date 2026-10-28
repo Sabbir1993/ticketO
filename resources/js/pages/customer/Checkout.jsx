@@ -5,12 +5,13 @@ import Icon from '@/components/Icon';
 import HoldTimer from '@/components/HoldTimer';
 import OrderSummary from '@/components/OrderSummary';
 import { Loading, ErrorState } from '@/components/States';
-import { api } from '@/lib/api';
+import { flow } from '@/lib/bookingApi';
 import { useApi, useStore } from '@/lib/store';
 import { bdt, cx } from '@/lib/utils';
 
 export default function Checkout() {
-  const { holdId } = useParams();
+  const { holdId, token } = useParams();
+  const { api, base } = flow(token);
   const nav = useNavigate();
   const { user, config, toast } = useStore();
   const { data: h, error, loading } = useApi(() => api.getHold({ holdId }), [holdId]);
@@ -33,18 +34,18 @@ export default function Checkout() {
   const submit = async (ev) => {
     ev.preventDefault();
     setBusy(true);
-    try { const o = await api.createOrder({ holdId, contact, promoCode: pricing?.promo || undefined }); nav(o.status === 'paid' ? `/booking/${o.id}?new=1` : `/payment/${o.id}`); }
+    try { const o = await api.createOrder({ holdId, contact, promoCode: pricing?.promo || undefined }); nav(o.status === 'paid' ? `${base}/booking/${o.id}?new=1` : `${base}/payment/${o.id}`); }
     catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   const offers = [...(h.promos || []).map((p) => ({ code: p.code, desc: `${p.type === 'flat' ? bdt(p.value) : `${p.value}%`} off — organiser offer` })), ...config.promos.filter((p) => p.scope === 'all' || p.scope === h.event.category)];
   return (
     <form onSubmit={submit} className="bg-ink-50/70 py-6 md:py-10">
       <div className="container-x">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold">Review your booking</h1><HoldTimer expiresAt={h.expiresAt} onExpire={() => { toast('Time is up — your seats were released', 'err'); nav(`/events/${h.event.slug}`); }} /></div>
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold">Review your booking</h1><HoldTimer expiresAt={h.expiresAt} onExpire={() => { toast('Time is up — your seats were released', 'err'); nav(`${base}/events/${h.event.slug}`); }} /></div>
         <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
           <div className="space-y-5">
             <section className="card p-5">
-              <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Contact details</h2>{!user && <Link href={`/login?next=/checkout/${holdId}`} className="text-sm font-medium text-brand-500">Login for faster checkout ›</Link>}</div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Contact details</h2>{!user && !token && <Link href={`/login?next=/checkout/${holdId}`} className="text-sm font-medium text-brand-500">Login for faster checkout ›</Link>}</div>
               {!user && <p className="mt-1 text-sm text-ink-500">Continuing as guest — tickets are sent to these details.</p>}
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <div><label className="label" htmlFor="c-name">Full name</label><input id="c-name" required className="input" value={contact.name} onChange={(e) => setContact({ ...contact, name: e.target.value })} /></div>
@@ -67,7 +68,7 @@ export default function Checkout() {
             <OrderSummary event={h.event} venue={h.venue} showDate={h.showDate} items={h.items} pricing={pricing} />
             <label className="flex items-start gap-2 text-xs text-ink-500"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 accent-brand-500" />I agree to the terms and the organiser&apos;s cancellation & refund policy.</label>
             <button disabled={!agree || busy} className="btn-primary h-12 w-full text-base">{busy ? 'Please wait…' : pricing?.total === 0 ? 'Confirm free booking' : `Proceed to pay ${bdt(pricing?.total)}`}</button>
-            <button type="button" onClick={async () => { await api.releaseHold({ holdId }); nav(`/events/${h.event.slug}`); }} className="btn-ghost h-10 w-full text-sm">Cancel & release seats</button>
+            <button type="button" onClick={async () => { await api.releaseHold({ holdId }); nav(`${base}/events/${h.event.slug}`); }} className="btn-ghost h-10 w-full text-sm">Cancel & release seats</button>
           </div>
         </div>
       </div>

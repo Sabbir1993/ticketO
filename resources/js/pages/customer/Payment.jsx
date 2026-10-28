@@ -4,12 +4,13 @@ import Icon from '@/components/Icon';
 import HoldTimer from '@/components/HoldTimer';
 import OrderSummary from '@/components/OrderSummary';
 import { Loading, ErrorState } from '@/components/States';
-import { api } from '@/lib/api';
+import { flow } from '@/lib/bookingApi';
 import { useApi, useStore } from '@/lib/store';
 import { bdt, cx } from '@/lib/utils';
 
 export default function Payment() {
-  const { orderId } = useParams();
+  const { orderId, token } = useParams();
+  const { api, base } = flow(token);
   const [sp] = useSearchParams();
   const nav = useNavigate();
   const { config, toast } = useStore();
@@ -17,7 +18,7 @@ export default function Payment() {
   const hold = useApi(() => (o ? api.getHold({ holdId: o.holdId }).catch(() => null) : null), [o?.id]);
   const [method, setMethod] = useState(sp.get('m') || 'sslcommerz');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (o?.status === 'paid') nav(`/booking/${o.id}`, { replace: true }); }, [o, nav]);
+  useEffect(() => { if (o?.status === 'paid') nav(`${base}/booking/${o.id}`, { replace: true }); }, [o, nav]); // eslint-disable-line
   if (loading) return <Loading />;
   if (error) return <ErrorState error={error} />;
   const m = config.paymentMethods.find((x) => x.id === method) || config.paymentMethods[0];
@@ -26,7 +27,7 @@ export default function Payment() {
     setBusy(true);
     try {
       const r = await api.startPayment({ orderId, method: m.id });
-      if (r.alreadyPaid) return nav(`/booking/${orderId}`);
+      if (r.alreadyPaid) return nav(`${base}/booking/${orderId}`);
       if (r.warning) toast(`Gateway unreachable — using sandbox simulator`, 'err');
       const url = r.redirectUrl;
       if (url.startsWith('/') ) nav(url);

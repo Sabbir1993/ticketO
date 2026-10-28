@@ -3,10 +3,10 @@ import Poster from './Poster';
 import Icon from './Icon';
 import { bdt, compact, fmtDate } from '@/lib/utils';
 
-export default function EventCard({ event: e }) {
+export default function EventCard({ event: e, href = `/events/${e.slug}` }) {
   const movie = e.category === 'movies';
   return (
-    <Link href={`/events/${e.slug}`} className="group block w-full animate-fadein">
+    <Link href={href} className="group block w-full animate-fadein">
       <div className="relative">
         <Poster event={e} className="aspect-[2/3] w-full shadow-card transition duration-300 group-hover:-translate-y-1 group-hover:shadow-pop" />
         <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 rounded-b-xl bg-black/85 px-3 py-1.5 text-xs text-white">

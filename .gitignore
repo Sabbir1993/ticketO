@@ -13,3 +13,6 @@ legacy/**/node_modules
 legacy/server/data
 legacy/server/uploads
 legacy/server/.env
+
+# Flutter mobile client (kept out of this repo)
+mobile-app/
