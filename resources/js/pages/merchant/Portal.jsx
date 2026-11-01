@@ -12,22 +12,31 @@ import { api, uploadFile } from '@/lib/api';
 import { useApi, useStore } from '@/lib/store';
 import { STATUS_LABEL, bdt, bdtPlain, downloadCSV, fmtDate, fmtTime } from '@/lib/utils';
 
+// `perm` = the permission the server requires for that page (see the merchant group in routes/api.js).
+// Items the signed-in staff member lacks are hidden, so box-office / gate staff don't land on 403 pages.
 const NAV = [
-  { id: '', label: 'Dashboard', icon: 'LayoutDashboard' },
+  { id: '', label: 'Dashboard', icon: 'LayoutDashboard', perm: 'merchant.dashboard.view' },
   { section: 'Events' },
-  { id: 'events', label: 'My events', icon: 'Calendar' },
-  { id: 'events/new', label: 'Create event', icon: 'Plus' },
+  { id: 'events', label: 'My events', icon: 'Calendar', perm: 'merchant.events.manage' },
+  { id: 'events/new', label: 'Create event', icon: 'Plus', perm: 'merchant.events.manage' },
   { section: 'Sales' },
-  { id: 'orders', label: 'Orders & refunds', icon: 'Users' },
-  { id: 'settlement', label: 'Settlement', icon: 'Wallet' },
+  { id: 'orders', label: 'Orders & refunds', icon: 'Users', perm: 'merchant.orders.view' },
+  { id: 'settlement', label: 'Settlement', icon: 'Wallet', perm: 'merchant.settlement.view' },
   { section: 'Settings' },
-  { id: 'payments', label: 'Payment gateway', icon: 'Plug' },
-  { id: 'business', label: 'Business & KYC', icon: 'Building2' },
-  { id: 'embed', label: 'Embed links', icon: 'Link2' },
+  { id: 'payments', label: 'Payment gateway', icon: 'Plug', perm: 'merchant.gateway.manage' },
+  { id: 'business', label: 'Business & KYC', icon: 'Building2', perm: 'merchant.business.manage' },
+  { id: 'embed', label: 'Embed links', icon: 'Link2', perm: 'merchant.events.manage' },
   { section: 'Operations' },
-  { id: '~pos', label: 'POS box office', icon: 'LayoutGrid' },
-  { id: '~gate', label: 'Gate scanner', icon: 'ScanLine' },
+  { id: '~pos', label: 'POS box office', icon: 'LayoutGrid', perm: 'pos.sell' },
+  { id: '~gate', label: 'Gate scanner', icon: 'ScanLine', perm: 'gate.scan' },
 ];
+
+/** Keep the items the user may use, and drop section headings that end up empty. */
+function allowedNav(user) {
+  const can = (p) => !!user?.permissions?.includes(p);
+  const items = NAV.filter((n) => n.section || can(n.perm));
+  return items.filter((n, i) => !n.section || (items[i + 1] && !items[i + 1].section));
+}
 
 export default function MerchantPortal() {
   const { user, merchant, checked, signOut } = useStore();
@@ -36,8 +45,14 @@ export default function MerchantPortal() {
   if (!checked) return <Loading />;
   if (!user || user.role !== 'merchant') return <Navigate to={`/partner/login?next=${encodeURIComponent(pathname)}`} replace />;
   const active = pathname.replace(/^\/merchant\/?/, '').replace(/^events\/(?!new).+/, 'events');
+  const navItems = allowedNav(user);
+  // Staff without the dashboard permission (e.g. box office) land on the first page they can use instead of a 403.
+  const firstId = navItems.find((n) => !n.section)?.id;
+  if (active === '' && !user.permissions?.includes('merchant.dashboard.view') && firstId) {
+    return <Navigate to={firstId.startsWith('~') ? `/${firstId.slice(1)}` : `/merchant/${firstId}`} replace />;
+  }
   return (
-    <PortalShell title="Merchant portal" subtitle={merchant?.type} user={merchant?.name || user.name} nav={NAV} active={active}
+    <PortalShell title="Merchant portal" subtitle={merchant?.type} user={merchant?.name || user.name} nav={navItems} active={active}
       onNav={(id) => nav(id.startsWith('~') ? `/${id.slice(1)}` : `/merchant${id ? `/${id}` : ''}`)}
       actions={<><Link href="/merchant/events/new" className="btn-primary hidden h-9 px-4 text-sm sm:inline-flex"><Icon name="Plus" size={15} />New event</Link><button onClick={() => { signOut(); nav('/'); }} className="btn-ghost h-9 px-3 text-sm"><Icon name="LogOut" size={15} />Sign out</button></>}>
       {merchant?.status !== 'active' && (
