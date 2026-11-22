@@ -23,7 +23,7 @@ const EVENT_COLUMNS = [
     'e.language_code', 'e.certificate_code', 'e.booking_limit', 'e.sale_start', 'e.sale_end', 'e.description',
     'e.is_refundable', 'e.is_cancellable', 'e.is_transferable', 'e.refund_window_hrs', 'e.cancellation_fee_pct',
     'c.slug as category', 'sc.slug as sub_category', 'vt.slug as view_type', 't.slug as template_slug', 't.name as template_name',
-    'm.uuid as merchant_uuid', 'm.name as merchant_name',
+    'm.uuid as merchant_uuid', 'm.name as merchant_name', 'm.slug as merchant_slug', 'm.brand_primary', 'm.brand_accent', 'lm.uuid as merchant_logo', 'lm.visibility as merchant_logo_vis',
 ];
 
 /** Events joined with category, view type, template and merchant (the summary's columns). */
@@ -34,6 +34,7 @@ function eventQuery(...extraColumns) {
         .join('view_types as vt', 'vt.id', '=', 'e.view_type_id')
         .leftJoin('layout_templates as t', 't.id', '=', 'e.template_id')
         .join('merchants as m', 'm.id', '=', 'e.merchant_id')
+        .leftJoin('media as lm', 'lm.id', '=', 'm.logo_media_id')
         .select(...EVENT_COLUMNS, ...extraColumns);
 }
 
@@ -125,7 +126,10 @@ function summary(e, R, label) {
         venue: v ? { id: v.slug, name: v.name, city: v.city, address: v.address } : null,
         cities: [...new Set(venues.map((x) => x.city))],
         nextShow: iso(shows[0]?.starts_at), showsCount: shows.length, priceFrom: prices.length ? Math.min(...prices) : 0,
-        merchant: { id: e.merchant_uuid, name: e.merchant_name },
+        merchant: {
+            id: e.merchant_uuid, name: e.merchant_name, slug: e.merchant_slug, logoUrl: e.merchant_logo && e.merchant_logo_vis === 'public' ? `/api/media/${e.merchant_logo}` : null,
+            theme: e.brand_primary || e.brand_accent ? { primary: e.brand_primary || null, accent: e.brand_accent || null } : null,
+        },
         soldOut: shows.length > 0 && shows.every((s) => R.free.has(s.id) && R.free.get(s.id) === 0),
     };
 }

@@ -13,6 +13,10 @@ Route.get('/auth/me', 'AuthController@me');
 Route.get('/events', 'EventController@index');
 Route.get('/events/{slug}', 'EventController@show');
 
+// Organiser public page + brand images (logo / banner are the only public media).
+Route.get('/merchants/{slug}', 'MediaController@merchantPage').middleware(['throttle:120,1']);
+Route.get('/media/{id}', 'MediaController@show').middleware(['throttle:300,1']);
+
 // Embed links: the signed token is the credential; scope is enforced inside EmbedController.
 Route.get('/embed/{token}', 'EmbedController@show').middleware(['throttle:120,1']);
 Route.get('/embed/{token}/events/{slug}', 'EmbedController@event').middleware(['throttle:120,1']);
@@ -121,6 +125,10 @@ Route.group({ prefix: '/merchant', middleware: ['auth:merchant', 'merchant'] }, 
     Route.post('/kyc', 'MerchantController@kyc').middleware(['permission:merchant.business.manage']);
     Route.put('/payment-settings', 'MerchantController@paymentSettings').middleware(['permission:merchant.gateway.manage']);
     Route.post('/payment-settings/test', 'MerchantController@testPayment').middleware(['permission:merchant.gateway.manage', 'throttle:10,10,user']);
+    Route.get('/brand', 'MerchantController@brand').middleware(['permission:merchant.business.manage']);
+    Route.put('/brand', 'MerchantController@saveBrand').middleware(['permission:merchant.business.manage', 'throttle:30,10,user']);
+    Route.post('/brand/image', 'MerchantController@brandImage').middleware(['permission:merchant.business.manage', 'throttle:10,10,user']);
+    Route.delete('/brand/image/{kind}', 'MerchantController@clearBrandImage').middleware(['permission:merchant.business.manage']);
     Route.get('/dashboard', 'MerchantController@dashboard').middleware(['permission:merchant.dashboard.view']);
     Route.get('/events', 'MerchantController@events').middleware(['permission:merchant.events.manage,merchant.dashboard.view,pos.sell,gate.scan']);
     Route.post('/events', 'MerchantController@saveEvent').middleware(['permission:merchant.events.manage', 'throttle:60,1,user']);
@@ -132,6 +140,8 @@ Route.group({ prefix: '/merchant', middleware: ['auth:merchant', 'merchant'] }, 
     Route.delete('/events/{id}', 'MerchantController@destroy').middleware(['permission:merchant.events.manage']);
     Route.get('/orders', 'MerchantController@orders').middleware(['permission:merchant.orders.view']);
     Route.get('/settlement', 'MerchantController@settlement').middleware(['permission:merchant.settlement.view']);
+    Route.get('/settlement/events', 'MerchantController@payout').middleware(['permission:merchant.settlement.view']);
+    Route.get('/settlement/events.csv', 'MerchantController@payoutCsv').middleware(['permission:merchant.settlement.view', 'throttle:20,10,user']);
     Route.get('/embed-links', 'EmbedController@merchantLinks').middleware(['permission:merchant.events.manage']);
     Route.post('/embed-links', 'EmbedController@createLink').middleware(['permission:merchant.events.manage', 'throttle:30,1,user']);
 });

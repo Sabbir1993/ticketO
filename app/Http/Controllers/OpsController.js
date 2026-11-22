@@ -7,7 +7,7 @@ const json = (res, data, status = 200) => { res.header('Cache-Control', 'no-stor
 
 class OpsController extends Controller {
     async posSale(req, res) { return json(res, await PosService.sale(req.ctx, req.only(['showId', 'seats', 'zones', 'method', 'phone', 'name'])), 201); }
-    async scan(req, res) { return json(res, await GateService.scan(req.ctx, req.only(['code', 'gate', 'eventId']))); }
+    async scan(req, res) { return json(res, await GateService.scan(req.ctx, req.only(['code', 'gate', 'eventId', 'method']))); }
     async gateStats(req, res) { return json(res, await GateService.stats(req.ctx, { eventId: req.query('eventId') })); }
 }
 

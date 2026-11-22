@@ -8,6 +8,23 @@ export function colorScale(h) {
   Object.entries(SHADE).forEach(([k, v]) => { out[k] = c.map((x) => Math.round(x * (1 - v))); });
   return out;
 }
+const lin = (c) => { const x = c / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+const contrastWhite = ([r, g, b]) => 1.05 / (0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) + 0.05);
+/** Darkens a light brand colour (same hue) until white text on it reaches WCAG 3:1; returns a hex string. */
+export function readableOnWhite(h) {
+  let c = hex(h);
+  for (let i = 0; i < 40 && contrastWhite(c) < 3; i++) c = c.map((x) => Math.round(x * 0.94));
+  return `#${c.map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+}
+/** CSS variables for a merchant theme, to put on a wrapper element (scoped — never touches <html>). */
+export function themeStyle(t) {
+  const style = {};
+  [['brand', t?.primary], ['accent', t?.accent]].forEach(([name, color]) => {
+    if (!/^#[0-9a-f]{6}$/i.test(color || '')) return;
+    Object.entries(colorScale(readableOnWhite(color))).forEach(([k, v]) => { style[`--${name}-${k}`] = v.join(' '); });
+  });
+  return style;
+}
 export function applyTheme(b = {}) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement.style;

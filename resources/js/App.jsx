@@ -4,6 +4,7 @@ import { SiteLayout, BareLayout } from '@/components/Layout';
 import Toasts from '@/components/Toasts';
 import Home from '@/pages/customer/Home';
 import Explore from '@/pages/customer/Explore';
+import MerchantPage from '@/pages/customer/MerchantPage';
 import EventPage from '@/pages/customer/EventPage';
 import Showtimes from '@/pages/customer/Showtimes';
 import Book from '@/pages/customer/Book';
@@ -33,6 +34,7 @@ export default function App() {
           <Route element={<SiteLayout />}>
             <Route index element={<Home />} />
             <Route path="explore" element={<Explore />} />
+            <Route path="m/:slug" element={<MerchantPage />} />
             <Route path="events/:slug" element={<EventPage />} />
             <Route path="events/:slug/showtimes" element={<Showtimes />} />
             <Route path="checkout/:holdId" element={<Checkout />} />

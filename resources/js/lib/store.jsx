@@ -2,6 +2,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 import { applyTheme } from './theme';
+import { readLocale, setCurrentLocale, translate } from './i18n';
+
+// Set before the first render so formatting helpers (dates, ৳) already use the saved language.
+setCurrentLocale(readLocale());
 
 const Ctx = createContext(null);
 const PREFS_KEY = 'ticketo:prefs';
@@ -14,6 +18,10 @@ export function StoreProvider({ children }) {
   const [session, setSession] = useState({ user: null, merchant: null, checked: false });
   const [prefs, setPrefs] = useState(readPrefs);
   const [toasts, setToasts] = useState([]);
+  const [locale, setLocaleState] = useState(readLocale);
+  const setLocale = useCallback((l) => { setCurrentLocale(l); setLocaleState(l === 'bn' ? 'bn' : 'en'); }, []);
+  // New function identity per language, so every component reading the store re-renders on a switch.
+  const t = useCallback((key, vars) => translate(key, vars), [locale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {} }, [prefs]);
 
@@ -40,7 +48,7 @@ export function StoreProvider({ children }) {
     earnPoints: (n) => setPrefs((p) => ({ ...p, points: p.points + n, lifetimePoints: p.lifetimePoints + n })),
   }), [toast, loadConfig, refreshMe]);
 
-  const value = { config, configError, ...session, prefs, toasts, ready: !!config && session.checked, ...actions };
+  const value = { config, configError, ...session, prefs, toasts, locale, setLocale, t, ready: !!config && session.checked, ...actions };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 export const useStore = () => useContext(Ctx);

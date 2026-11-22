@@ -109,16 +109,21 @@ const categories = [
 ];
 
 const paymentMethods = [
-    ['sslcommerz', 'SSLCOMMERZ', 'Cards, mobile & internet banking', 'ShieldCheck', '#1e5aa8', 'sslcommerz', ''],
-    ['bkash', 'bKash', 'Pay with your bKash account', 'Smartphone', '#e2136e', 'sslcommerz', 'bkash'],
-    ['nagad', 'Nagad', 'Pay with your Nagad account', 'Smartphone', '#f6921e', 'sslcommerz', 'nagad'],
-    ['card', 'Credit / Debit Card', 'Visa, Mastercard, Amex', 'CreditCard', '#333545', 'sslcommerz', 'visacard,mastercard,amexcard'],
-    ['netbank', 'Internet Banking', 'All major BD banks', 'Landmark', '#2a9d8f', 'sslcommerz', 'internetbank'],
+    // [code, name, subtitle, icon, color, gateway, multi_card_name, group, enabled]
+    // Rocket / Upay / Easy start DISABLED: confirm SSLCOMMERZ's channel identifier and that the store has the channel active.
+    ['sslcommerz', 'SSLCOMMERZ', 'Cards, mobile & internet banking', 'ShieldCheck', '#1e5aa8', 'sslcommerz', '', 'other', 1],
+    ['bkash', 'bKash', 'Pay with your bKash account', 'Smartphone', '#e2136e', 'sslcommerz', 'bkash', 'wallet', 1],
+    ['nagad', 'Nagad', 'Pay with your Nagad account', 'Smartphone', '#f6921e', 'sslcommerz', 'nagad', 'wallet', 1],
+    ['rocket', 'Rocket', 'Pay with your Rocket account', 'Smartphone', '#8c3494', 'sslcommerz', '', 'wallet', 0],
+    ['upay', 'Upay', 'Pay with your Upay account', 'Smartphone', '#ffcb05', 'sslcommerz', 'upay', 'wallet', 0],
+    ['easy', 'Easy Wallet', 'Pay with your Easy wallet', 'Smartphone', '#00a859', 'sslcommerz', '', 'wallet', 0],
+    ['card', 'Credit / Debit Card', 'Visa, Mastercard, Amex', 'CreditCard', '#333545', 'sslcommerz', 'visacard,mastercard,amexcard', 'card', 1],
+    ['netbank', 'Internet Banking', 'All major BD banks', 'Landmark', '#2a9d8f', 'sslcommerz', 'internetbank', 'bank', 1],
 ];
 
 // [location, label, icon, href, audience, permission]
 const nav = [
-    ['header_top', 'Sell tickets', 'Store', '/merchant/register', 'all'],
+    ['header_top', 'Event Registration', 'CalendarPlus', '/merchant/register', 'all'],
     ['header_top', 'Offers', 'Percent', '/offers', 'all'],
     ['header_top', 'Rewards', 'Award', '/profile?tab=rewards', 'all'],
     ['drawer_customer', 'Your Orders', 'Ticket', '/profile?tab=bookings', 'all'],
@@ -127,7 +132,7 @@ const nav = [
     ['drawer_customer', 'Offers', 'Percent', '/offers', 'all'],
     ['drawer_customer', 'Help & Support', 'LifeBuoy', '/help', 'all'],
     ['drawer_staff', 'Merchant portal', 'Store', '/merchant', 'staff'],
-    ['drawer_staff', 'Become a merchant', 'Store', '/merchant/register', 'guest'],
+    ['drawer_staff', 'Event Registration', 'CalendarPlus', '/merchant/register', 'guest'],
     ['drawer_staff', 'POS box office', 'LayoutGrid', '/pos', 'staff', 'pos.sell'],
     ['drawer_staff', 'Gate scanner', 'ScanLine', '/gate', 'staff', 'gate.scan'],
     ['drawer_staff', 'Admin console', 'ShieldCheck', '/admin', 'staff', 'cms.dashboard.view'],
@@ -159,7 +164,7 @@ const faqs = [
 ];
 
 const contentBlocks = [
-    ['footer_merchant_cta', 'Sell your event on Ticketo', 'Sign up as a merchant, connect your payment gateway and publish.', 'Become a merchant', '/merchant/register', 'Megaphone'],
+    ['footer_merchant_cta', 'Register your event on Ticketo', 'Sign up, connect your payment gateway and publish.', 'Event Registration', '/merchant/register', 'CalendarPlus'],
     ['register_how_it_works', 'How it works', null, null, null, 'ListChecks', { steps: ['Create your account and business profile', 'Upload KYC documents', 'Add your settlement account', 'Choose platform collection or connect your own gateway', 'Design your venue and publish events'] }],
     ['checkout_consent', 'Terms consent', 'I agree to the Terms of use, Refund policy and the organiser’s event policy.', null, '/page/terms', null],
     ['login_intro', 'Sign in', 'Sign in for rewards & faster checkout', null, null, 'Smartphone'],
@@ -168,14 +173,14 @@ const contentBlocks = [
 const banners = [
     ['Dhaka T20 League — The Final', 'Pick your block in the oval · Under lights', 'Featured', 'Choose seats', '/events/dhaka-t20-league-final', ['#1E3A8A', '#3B82F6']],
     ['Monsoon Beats Live 2026', 'Fan pit · VIP deck · 7 bands at Purbachal', 'Featured', 'Book now', '/events/monsoon-beats-live-2026', ['#9F1239', '#EE3240']],
-    ['Sell tickets for your event', 'Sign up as a merchant, connect your gateway and publish in minutes', null, 'Become a merchant', '/merchant/register', ['#0F172A', '#2D499A']],
+    ['Register your event', 'Sign up, connect your gateway and publish in minutes', null, 'Event Registration', '/merchant/register', ['#0F172A', '#2D499A']],
 ];
 
 const homeSections = [
     ['banners', null, {}],
     ['row', 'Recommended Movies', { categories: ['movies'], sort: 'score', cityName: true }],
     ['row', 'Cricket & Football', { categories: ['sports'], sort: 'date' }],
-    ['cta', 'Organising an event? Sell on Ticketo.', { sub: 'Self-onboard as a merchant, connect your own SSLCOMMERZ / bKash account, design your own venue layout and publish.', cta: 'Get started', href: '/merchant/register', icon: 'Store' }],
+    ['cta', 'Organising an event? Register it on Ticketo.', { sub: 'Self-onboard as a merchant, connect your own SSLCOMMERZ / bKash account, design your own venue layout and publish.', cta: 'Get started', href: '/merchant/register', icon: 'CalendarPlus' }],
     ['categories', 'The Best of Live Events', {}],
     ['row', 'Concerts & Festivals', { categories: ['concerts', 'fairs'], sort: 'date' }],
     ['row', 'Theater, Comedy & Talks', { categories: ['theater', 'comedy', 'seminars', 'workshops', 'webinars'], sort: 'date' }],

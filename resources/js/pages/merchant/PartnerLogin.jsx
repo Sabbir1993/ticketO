@@ -57,7 +57,7 @@ export default function PartnerLogin() {
             <label className="label mt-5" htmlFor="pe">Email</label><input id="pe" type="email" required className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoComplete="username" />
             <label className="label mt-3" htmlFor="pp">Password</label><input id="pp" type="password" required className="input" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" />
             <button disabled={busy} className="btn-primary mt-5 h-12 w-full">{busy ? 'Signing in…' : 'Sign in'}</button>
-            <p className="mt-4 text-center text-sm text-ink-500">New organiser? <Link href="/merchant/register" className="font-medium text-brand-500">Create a merchant account</Link></p>
+            <p className="mt-4 text-center text-sm text-ink-500">New organiser? <Link href="/merchant/register" className="font-medium text-brand-500">Register your event</Link></p>
           </form>
         ) : (
           <form onSubmit={verify} className="card p-7">

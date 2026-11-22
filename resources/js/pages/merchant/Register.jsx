@@ -54,7 +54,7 @@ export default function Register() {
     <div className="bg-ink-50/70 py-8 md:py-12">
       <div className="container-x grid max-w-5xl gap-8 lg:grid-cols-[1fr_300px]">
         <div className="card min-w-0">
-          <div className="border-b border-ink-100 p-5"><h1 className="text-2xl font-bold">Become a Ticketo merchant</h1><p className="text-sm text-ink-500">Sell tickets for your matches, concerts, shows and conferences.</p></div>
+          <div className="border-b border-ink-100 p-5"><h1 className="text-2xl font-bold">Event Registration</h1><p className="text-sm text-ink-500">Register your matches, concerts, shows and conferences and start selling tickets.</p></div>
           <ol className="no-scrollbar flex gap-1 overflow-x-auto border-b border-ink-100 p-3">{STEPS.map((s, i) => <li key={s}><button type="button" onClick={() => i < step && setStep(i)} className={cx('flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm', i === step ? 'bg-brand-50 font-semibold text-brand-600' : 'text-ink-500')}><span className={cx('flex h-6 w-6 items-center justify-center rounded-full text-xs', i < step ? 'bg-emerald-500 text-white' : i === step ? 'bg-brand-500 text-white' : 'bg-ink-100')}>{i < step ? '✓' : i + 1}</span>{s}</button></li>)}</ol>
           <div className="space-y-4 p-6">
             {step === 0 && (<>

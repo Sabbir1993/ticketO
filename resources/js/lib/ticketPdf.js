@@ -23,6 +23,7 @@ export async function downloadTicketPdf(o) {
     doc.setLineDashPattern([1.5, 1.5], 0); doc.line(150, y0 + 4, 150, y0 + 82);
     doc.addImage(await QR.toDataURL(t.code, { width: 300, margin: 1 }), 'PNG', 155, y0 + 14, 36, 36);
     doc.setFontSize(8); doc.setTextColor(30); doc.text(t.ref || t.code, 173, y0 + 56, { align: 'center' }); // QR carries the signed code; print the short ref
+    if (t.entryCode) { doc.setFontSize(6.5); doc.setTextColor(110); doc.text('ENTRY CODE (if QR fails)', 173, y0 + 62, { align: 'center' }); doc.setFontSize(10); doc.setTextColor(20); doc.text(t.entryCode, 173, y0 + 68, { align: 'center' }); doc.setTextColor(30); }
   }
   doc.addPage(); doc.setLineDashPattern([], 0);
   doc.setTextColor(30); doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.text('Money Receipt', 14, 22);

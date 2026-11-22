@@ -37,7 +37,7 @@ async function build() {
             .whereRaw('(b.starts_at IS NULL OR b.starts_at <= ?)', [now]).whereRaw('(b.ends_at IS NULL OR b.ends_at > ?)', [now])
             .orderBy('b.sort_order').orderBy('b.id').get(),
         HomeSection.select('id', 'type', 'title', 'config').where('is_hidden', 0).orderBy('sort_order').orderBy('id').get(),
-        PaymentMethod.select('code', 'name', 'subtitle', 'icon', 'color').where('is_enabled', 1).where('channel', 'online').orderBy('sort_order').orderBy('id').get(),
+        PaymentMethod.select('code', 'name', 'subtitle', 'icon', 'color', 'method_group').where('is_enabled', 1).where('channel', 'online').orderBy('sort_order').orderBy('id').get(),
         DB.table('promos as p').leftJoin('categories as c', 'c.id', '=', 'p.category_id')
             .select('p.code', 'p.type', 'p.value', 'p.max_discount', 'p.min_order', 'p.description', 'c.slug as scope')
             .where('p.is_active', 1).whereNull('p.event_id').whereNull('p.merchant_id').whereNull('p.deleted_at')
@@ -72,7 +72,7 @@ async function build() {
         cities: cities.map((c) => ({ id: c.slug, name: c.name, icon: c.icon, popular: !!c.is_popular, isDefault: !!c.is_default, online: !!c.is_online })),
         banners: banners.map((b) => ({ id: b.id, title: b.title, sub: b.subtitle, badge: b.badge, cta: b.cta_label, href: b.href, palette: Db.json(b.palette) || [], city: b.city })),
         home: home.map((h) => ({ id: `h${h.id}`, type: h.type, title: h.title, ...(Db.json(h.config) || {}) })),
-        paymentMethods: methods.map((m) => ({ id: m.code, name: m.name, sub: m.subtitle, icon: m.icon, color: m.color })),
+        paymentMethods: methods.map((m) => ({ id: m.code, name: m.name, sub: m.subtitle, icon: m.icon, color: m.color, group: m.method_group || 'other' })),
         promos: promos.map((p) => ({ code: p.code, type: p.type, value: num(p.value), max: num(p.max_discount), minOrder: num(p.min_order), desc: p.description, scope: p.scope || 'all' })),
         lookups: lookupMap,
         nav: navMap,

@@ -8,6 +8,7 @@ import Icon from '@/components/Icon';
 import { ErrorState, Loading, Empty } from '@/components/States';
 import EventEditor from './EventEditor';
 import PgForm from './PgForm';
+import Brand from './Brand';
 import { api, uploadFile } from '@/lib/api';
 import { useApi, useStore } from '@/lib/store';
 import { STATUS_LABEL, bdt, bdtPlain, downloadCSV, fmtDate, fmtTime } from '@/lib/utils';
@@ -21,10 +22,11 @@ const NAV = [
   { id: 'events/new', label: 'Create event', icon: 'Plus', perm: 'merchant.events.manage' },
   { section: 'Sales' },
   { id: 'orders', label: 'Orders & refunds', icon: 'Users', perm: 'merchant.orders.view' },
-  { id: 'settlement', label: 'Settlement', icon: 'Wallet', perm: 'merchant.settlement.view' },
+  { id: 'settlement', label: 'Sales & payout', icon: 'Wallet', perm: 'merchant.settlement.view' },
   { section: 'Settings' },
   { id: 'payments', label: 'Payment gateway', icon: 'Plug', perm: 'merchant.gateway.manage' },
   { id: 'business', label: 'Business & KYC', icon: 'Building2', perm: 'merchant.business.manage' },
+  { id: 'brand', label: 'Brand & page', icon: 'Palette', perm: 'merchant.business.manage' },
   { id: 'embed', label: 'Embed links', icon: 'Link2', perm: 'merchant.events.manage' },
   { section: 'Operations' },
   { id: '~pos', label: 'POS box office', icon: 'LayoutGrid', perm: 'pos.sell' },
@@ -39,22 +41,22 @@ function allowedNav(user) {
 }
 
 export default function MerchantPortal() {
-  const { user, merchant, checked, signOut } = useStore();
+  const { user, merchant, checked, signOut, t } = useStore();
   const nav = useNavigate();
   const { pathname } = useLocation();
   if (!checked) return <Loading />;
   if (!user || user.role !== 'merchant') return <Navigate to={`/partner/login?next=${encodeURIComponent(pathname)}`} replace />;
   const active = pathname.replace(/^\/merchant\/?/, '').replace(/^events\/(?!new).+/, 'events');
-  const navItems = allowedNav(user);
+  const navItems = allowedNav(user).map((n) => (n.section ? { ...n, section: t(n.section) } : { ...n, label: t(n.label) }));
   // Staff without the dashboard permission (e.g. box office) land on the first page they can use instead of a 403.
   const firstId = navItems.find((n) => !n.section)?.id;
   if (active === '' && !user.permissions?.includes('merchant.dashboard.view') && firstId) {
     return <Navigate to={firstId.startsWith('~') ? `/${firstId.slice(1)}` : `/merchant/${firstId}`} replace />;
   }
   return (
-    <PortalShell title="Merchant portal" subtitle={merchant?.type} user={merchant?.name || user.name} nav={navItems} active={active}
+    <PortalShell title={t('Merchant portal')} subtitle={merchant?.type} user={merchant?.name || user.name} nav={navItems} active={active}
       onNav={(id) => nav(id.startsWith('~') ? `/${id.slice(1)}` : `/merchant${id ? `/${id}` : ''}`)}
-      actions={<><Link href="/merchant/events/new" className="btn-primary hidden h-9 px-4 text-sm sm:inline-flex"><Icon name="Plus" size={15} />New event</Link><button onClick={() => { signOut(); nav('/'); }} className="btn-ghost h-9 px-3 text-sm"><Icon name="LogOut" size={15} />Sign out</button></>}>
+      actions={<><Link href="/merchant/events/new" className="btn-primary hidden h-9 px-4 text-sm sm:inline-flex"><Icon name="Plus" size={15} />{t('New event')}</Link><button onClick={() => { signOut(); nav('/'); }} className="btn-ghost h-9 px-3 text-sm"><Icon name="LogOut" size={15} />Sign out</button></>}>
       {merchant?.status !== 'active' && (
         <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <Icon name="Hourglass" size={18} />
@@ -70,6 +72,7 @@ export default function MerchantPortal() {
         <Route path="settlement" element={<Settlement />} />
         <Route path="payments" element={<Payments />} />
         <Route path="business" element={<Business />} />
+        <Route path="brand" element={<Brand />} />
         <Route path="embed" element={<EmbedLinks />} />
       </Routes>
     </PortalShell>
@@ -198,19 +201,56 @@ function Orders() {
   return <Panel title={`Orders (${rows.length})`} action={<button onClick={csv} className="btn-outline h-8 px-3 text-sm"><Icon name="Download" size={14} />Export CSV</button>}>{rows.length ? <OrdersTable rows={rows} onRefund={refund} /> : <p className="p-6 text-sm text-ink-500">No orders yet. Share your event link or sell from the POS.</p>}</Panel>;
 }
 
+// Event-wise sales & payout summary with date filter and CSV download (server-built; no customer data in it).
+function PayoutByEvent({ onPick, picked }) {
+  const { toast, t } = useStore();
+  const [range, setRange] = useState({ from: '', to: '' });
+  const [applied, setApplied] = useState({ from: '', to: '' });
+  const { data, loading, error } = useApi(() => api.merchantPayout({ from: applied.from || undefined, to: applied.to || undefined }), [applied.from, applied.to]);
+  const apply = (e) => { e.preventDefault(); if (range.from && range.to && range.from > range.to) return toast(t('"From" must be before "To"'), 'err'); setApplied(range); };
+  const qs = new URLSearchParams({ ...(applied.from && { from: applied.from }), ...(applied.to && { to: applied.to }) }).toString();
+  const tot = data?.total;
+  return (
+    <Panel title={t('Sales & payout by event')} action={<a href={`/api/merchant/settlement/events.csv${qs ? `?${qs}` : ''}`} className="btn-outline h-8 px-3 text-sm" download><Icon name="Download" size={14} />{t('Download CSV')}</a>}>
+      <form onSubmit={apply} className="flex flex-wrap items-end gap-3 border-b border-ink-100 p-4">
+        <div><label className="label" htmlFor="po-from">{t('From')}</label><input id="po-from" type="date" className="input h-9" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} /></div>
+        <div><label className="label" htmlFor="po-to">{t('To')}</label><input id="po-to" type="date" className="input h-9" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} /></div>
+        <button className="btn-primary h-9 px-4 text-sm">{t('Apply')}</button>
+        {(applied.from || applied.to) && <button type="button" onClick={() => { setRange({ from: '', to: '' }); setApplied({ from: '', to: '' }); }} className="btn-outline h-9 px-3 text-sm">{t('Clear')}</button>}
+      </form>
+      {loading ? <Loading /> : error ? <p className="p-5 text-sm text-brand-600">{error.message}</p> : !data.events.length ? <p className="p-6 text-sm text-ink-500">{t('No sales in this period.')}</p> : (
+        <div className="overflow-x-auto"><table className="w-full">
+          <thead className="bg-ink-50"><tr><th className="th">{t('Event')}</th><th className="th">{t('Orders')}</th><th className="th">{t('Tickets')}</th><th className="th">{t('Gross sales')}</th><th className="th">{t('Refunded')}</th><th className="th">{t('Commission')}</th><th className="th">{t('Net to you')}</th><th className="th">{t('Payable by Ticketo')}</th><th className="th">{t('Collected by you')}</th></tr></thead>
+          <tbody className="divide-y divide-ink-100">{data.events.map((e) => (
+            <tr key={e.eventId} className={picked === e.eventId ? 'bg-brand-50/60' : ''}>
+              <td className="td"><button onClick={() => onPick(picked === e.eventId ? null : e.eventId)} className="text-left font-medium text-brand-600 hover:underline" aria-pressed={picked === e.eventId}>{e.event}</button></td>
+              <td className="td">{e.orders}</td><td className="td">{e.tickets}</td><td className="td">{bdtPlain(e.gross)}</td><td className="td text-ink-500">{e.refunded ? `−${bdtPlain(e.refunded)}` : '—'}</td>
+              <td className="td text-brand-600">−{bdtPlain(e.commission)}</td><td className="td font-semibold">{bdtPlain(e.net)}</td><td className="td">{bdtPlain(e.payable)}</td><td className="td">{bdtPlain(e.directCollected)}</td>
+            </tr>))}</tbody>
+          <tfoot className="bg-ink-50 font-semibold"><tr><td className="td">{t('Total')}</td><td className="td">{tot.orders}</td><td className="td">{tot.tickets}</td><td className="td">{bdtPlain(tot.gross)}</td><td className="td">{tot.refunded ? `−${bdtPlain(tot.refunded)}` : '—'}</td><td className="td text-brand-600">−{bdtPlain(tot.commission)}</td><td className="td">{bdtPlain(tot.net)}</td><td className="td">{bdtPlain(tot.payable)}</td><td className="td">{bdtPlain(tot.directCollected)}</td></tr></tfoot>
+        </table></div>
+      )}
+      <p className="border-t border-ink-100 px-4 py-3 text-xs text-ink-500">{t('Payouts follow your {cycle} cycle. Click an event to see its bookings below. The CSV contains totals only — no customer details.', { cycle: data?.cycle || 'weekly' })}</p>
+    </Panel>
+  );
+}
+
 function Settlement() {
   const { data, loading } = useApi(() => api.merchantSettlement(), []);
+  const [eventId, setEventId] = useState(null);
   if (loading) return <Loading />;
+  const rows = eventId ? data.rows.filter((r) => r.eventId === eventId) : data.rows;
   return (
     <div className="space-y-6">
+      <PayoutByEvent onPick={setEventId} picked={eventId} />
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat label="Collection mode" value={data.mode === 'direct' ? 'Your own gateway' : 'Ticketo collects'} sub={`${data.commissionPct}% platform commission`} icon="Plug" />
         {data.mode === 'direct' ? <Stat label="Collected directly by you" value={bdtPlain(data.directCollected)} sub="Settled by your gateway" icon="Landmark" /> : <Stat label="Payable to you" value={bdtPlain(data.payableToMerchant)} sub="Next weekly payout" icon="Wallet" />}
         <Stat label="Commission due to Ticketo" value={bdtPlain(data.receivableFromMerchant)} sub={data.mode === 'direct' ? 'Invoiced monthly' : 'Deducted from payouts'} icon="Receipt" />
       </div>
-      <Panel title="Ledger">
-        {data.rows.length ? <div className="overflow-x-auto"><table className="w-full"><thead className="bg-ink-50"><tr><th className="th">Booking</th><th className="th">Date</th><th className="th">Event</th><th className="th">Collected by</th><th className="th">Ticket value</th><th className="th">Commission</th><th className="th">Net</th><th className="th">Status</th></tr></thead>
-          <tbody className="divide-y divide-ink-100">{data.rows.map((r) => <tr key={r.id}><td className="td font-mono text-xs">{r.id}</td><td className="td">{fmtDate(r.date)}</td><td className="td">{r.event}</td><td className="td capitalize">{r.pgMode === 'direct' ? 'You' : 'Ticketo'}</td><td className="td">{bdtPlain(r.gross)}</td><td className="td text-brand-600">−{bdtPlain(r.commission)}</td><td className="td font-semibold">{bdtPlain(r.net)}</td><td className="td"><Pill status={r.status} /></td></tr>)}</tbody></table></div>
+      <Panel title={eventId ? `Ledger — ${rows[0]?.event || 'selected event'}` : 'Ledger'} action={eventId ? <button onClick={() => setEventId(null)} className="btn-outline h-8 px-3 text-sm">Show all events</button> : null}>
+        {rows.length ? <div className="overflow-x-auto"><table className="w-full"><thead className="bg-ink-50"><tr><th className="th">Booking</th><th className="th">Date</th><th className="th">Event</th><th className="th">Collected by</th><th className="th">Ticket value</th><th className="th">Commission</th><th className="th">Net</th><th className="th">Status</th></tr></thead>
+          <tbody className="divide-y divide-ink-100">{rows.map((r) => <tr key={r.id}><td className="td font-mono text-xs">{r.id}</td><td className="td">{fmtDate(r.date)}</td><td className="td">{r.event}</td><td className="td capitalize">{r.pgMode === 'direct' ? 'You' : 'Ticketo'}</td><td className="td">{bdtPlain(r.gross)}</td><td className="td text-brand-600">−{bdtPlain(r.commission)}</td><td className="td font-semibold">{bdtPlain(r.net)}</td><td className="td"><Pill status={r.status} /></td></tr>)}</tbody></table></div>
           : <p className="p-6 text-sm text-ink-500">No paid orders yet.</p>}
       </Panel>
     </div>

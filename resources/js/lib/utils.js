@@ -1,11 +1,14 @@
-export const cx = (...a) => a.filter(Boolean).join(' ');
-export const bdt = (n) => (n === 0 ? 'Free' : `৳${Math.round(n || 0).toLocaleString('en-IN')}`);
-export const bdtPlain = (n) => `৳${Math.round(n || 0).toLocaleString('en-IN')}`;
+import { currentLocale, digits, translate, WEEKDAYS, MONTHS } from './i18n.js';
 
-const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-export const fmtDate = (iso, { weekday = true, year = false } = {}) => { if (!iso) return '—'; const d = new Date(iso); return `${weekday ? `${WD[d.getDay()]}, ` : ''}${d.getDate()} ${MO[d.getMonth()]}${year ? ` ${d.getFullYear()}` : ''}`; };
-export const fmtTime = (iso) => { if (!iso) return ''; const d = new Date(iso); const h = d.getHours(); return `${((h + 11) % 12) + 1}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+export const cx = (...a) => a.filter(Boolean).join(' ');
+export const bdt = (n) => (n === 0 ? translate('Free') : digits(`৳${Math.round(n || 0).toLocaleString('en-IN')}`));
+export const bdtPlain = (n) => digits(`৳${Math.round(n || 0).toLocaleString('en-IN')}`);
+
+// Day / month names follow the chosen language (these helpers run during render, after the locale is set).
+const WD = new Proxy([], { get: (_, i) => WEEKDAYS[currentLocale()][i] });
+const MO = new Proxy([], { get: (_, i) => MONTHS[currentLocale()][i] });
+export const fmtDate = (iso, { weekday = true, year = false } = {}) => { if (!iso) return '—'; const d = new Date(iso); return digits(`${weekday ? `${WD[d.getDay()]}, ` : ''}${d.getDate()} ${MO[d.getMonth()]}${year ? ` ${d.getFullYear()}` : ''}`); };
+export const fmtTime = (iso) => { if (!iso) return ''; const d = new Date(iso); const h = d.getHours(); return digits(`${((h + 11) % 12) + 1}:${String(d.getMinutes()).padStart(2, '0')} ${translate(h < 12 ? 'AM' : 'PM')}`); };
 export const fmtDateTime = (iso) => `${fmtDate(iso)}, ${fmtTime(iso)}`;
 export const weekday = (iso) => WD[new Date(iso).getDay()];
 export const monthShort = (iso) => MO[new Date(iso).getMonth()];
@@ -16,7 +19,9 @@ export function timeLeft(ms) { const s = Math.max(0, Math.floor(ms / 1000)); ret
 export const toLocalInput = (iso) => { if (!iso) return ''; const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 
 export function downloadCSV(filename, rows) {
-  const csv = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  // Spreadsheet formula-injection guard: cells starting with = + - @ are prefixed with an apostrophe.
+  const safe = (c) => { const s = String(c ?? ''); return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s; };
+  const csv = rows.map((r) => r.map((c) => `"${safe(c).replace(/"/g, '""')}"`).join(',')).join('\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = filename; a.click();
 }
 export const fileToDataUrl = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });

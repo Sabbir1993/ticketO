@@ -60,7 +60,7 @@ const ConfigAdminService = {
     async get() {
         const [platform, branding, categories, methods, gateways, promos, home, banners] = await Promise.all([
             SettingsService.group('platform'), SettingsService.group('branding'), categoriesTree(),
-            PaymentMethod.select('code', 'name', 'subtitle', 'icon', 'color', 'gateway', 'multi_card_name', 'is_enabled').where('channel', 'online').orderBy('sort_order').orderBy('id').get(),
+            PaymentMethod.select('code', 'name', 'subtitle', 'icon', 'color', 'method_group', 'gateway', 'multi_card_name', 'is_enabled').where('channel', 'online').orderBy('sort_order').orderBy('id').get(),
             gatewaysView(),
             DB.table('promos as p').leftJoin('categories as c', 'c.id', '=', 'p.category_id')
                 .select('p.id', 'p.code', 'p.type', 'p.value', 'p.max_discount', 'p.min_order', 'p.description', 'p.is_active', 'p.used_count', 'p.usage_limit', 'p.per_customer_limit',
@@ -75,7 +75,7 @@ const ConfigAdminService = {
             branding: camelKeys(branding),
             categories,
             payment: {
-                methods: methods.map((m) => ({ id: m.code, name: m.name, sub: m.subtitle, icon: m.icon, color: m.color, gateway: m.gateway, multiCardName: m.multi_card_name || '', enabled: !!m.is_enabled })),
+                methods: methods.map((m) => ({ id: m.code, name: m.name, sub: m.subtitle, icon: m.icon, color: m.color, group: m.method_group || 'other', gateway: m.gateway, multiCardName: m.multi_card_name || '', enabled: !!m.is_enabled })),
                 gateways,
             },
             promos: promos.map((p) => ({
@@ -155,7 +155,7 @@ const ConfigAdminService = {
         for (const [i, m] of list.entries()) {
             if (!['sslcommerz', 'bkash'].includes(m.gateway)) bad(`Unknown gateway for ${m.name || m.id}`);
             await PaymentMethod.where('code', String(m.id)).where('channel', 'online').update({
-                is_enabled: m.enabled ? 1 : 0, gateway: m.gateway, multi_card_name: m.gateway === 'sslcommerz' ? String(m.multiCardName || '').slice(0, 190) || null : null, sort_order: i, updated_at: now,
+                is_enabled: m.enabled ? 1 : 0, method_group: ['wallet', 'card', 'bank', 'other'].includes(m.group) ? m.group : 'other', gateway: m.gateway, multi_card_name: m.gateway === 'sslcommerz' ? String(m.multiCardName || '').slice(0, 190) || null : null, sort_order: i, updated_at: now,
             });
         }
         return { after: list.map((m) => ({ id: m.id, enabled: !!m.enabled, gateway: m.gateway })) };

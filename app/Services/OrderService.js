@@ -96,7 +96,7 @@ async function view(o) {
         amounts: { subtotal: money(o.subtotal), discount: money(o.discount), fee: money(o.fee), feeExVat: money(o.fee_ex_vat), vat: money(o.vat), total: money(o.total) },
         promo: o.promo_code || null,
         contact: { name: o.contact_name, phone: o.contact_phone, email: o.contact_email },
-        tickets: tickets.map((t) => ({ code: TicketSigner.sign(t.uuid, t.version), ref: TicketSigner.shortCode(t.uuid), label: t.label, tier: t.tier_name, status: t.status, scanned: !!t.scanned_at })),
+        tickets: tickets.map((t) => ({ code: TicketSigner.sign(t.uuid, t.version), ref: TicketSigner.shortCode(t.uuid), entryCode: TicketSigner.entryCode(t.uuid, t.version), label: t.label, tier: t.tier_name, status: t.status, scanned: !!t.scanned_at })),
         payment: payment ? {
             method: payment.method_code, gateway: payment.gateway, pgMode: payment.pg_mode, tranId: payment.tran_id, status: payment.status,
             ref: payment.bank_tran_id || payment.val_id || payment.tran_id, cardType: payment.card_brand, paidAt: payment.completed_at, lastError: payment.status === 'success' ? null : payment.error,
@@ -286,9 +286,10 @@ const OrderService = {
                 }
                 // Tickets: one per seat, one per GA place.
                 const tickets = items.flatMap((i) => Array.from({ length: i.type === 'seat' ? 1 : i.qty }, (_, k) => ({
-                    uuid: uuid(), order_id: o.id, order_item_id: i.id, show_seat_id: i.show_seat_id, tier_key: i.tier_key, tier_name: i.tier_name, version: 1, status: 'valid', created_at: now,
+                    uuid: uuid(), order_id: o.id, order_item_id: i.id, show_seat_id: i.show_seat_id, tier_key: i.tier_key, tier_name: i.tier_name, version: 1, status: 'valid', created_at: now, entry_code_hash: null,
                     label: i.type === 'seat' ? `${i.block_name} · ${i.seat_code}` : `${i.block_name}${i.qty > 1 ? ` #${k + 1}` : ''}`,
                 })));
+                for (const t of tickets) t.entry_code_hash = TicketSigner.entryHash(t.uuid, t.version);
                 await Db.insertMany('tickets', tickets);
                 await Order.where('id', o.id).update({ status: 'paid', paid_at: now, updated_at: now });
                 await Payment.where('id', pid).update({ status: 'success', val_id: valId, bank_tran_id: bankTranId, card_brand: cardBrand ? String(cardBrand).slice(0, 60) : null, risk_level: riskLevel === null ? null : String(riskLevel).slice(0, 10), error: null, completed_at: now });

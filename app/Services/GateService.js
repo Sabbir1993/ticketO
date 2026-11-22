@@ -12,9 +12,11 @@ const Hasher = use('App/Security/Hasher');
 const IpResolver = use('App/Security/IpResolver');
 const TicketSigner = use('App/Security/TicketSigner');
 const SecurityEventService = use('App/Services/SecurityEventService');
-const { bad } = use('App/Support/HttpError');
+const { bad, tooMany } = use('App/Support/HttpError');
 
 const PAID = ['paid'];
+const CODE_ATTEMPTS_PER_MIN = 20; // wrong typed codes per checker per minute (the code is short, so guessing is capped)
+const TICKET_COLUMNS = ['t.id', 't.uuid', 't.label', 't.version', 't.status', 't.scanned_at', 'o.status as order_status', 'o.merchant_id', 'o.event_id', 'o.contact_name', 'e.title as event_title', 's.venue_id'];
 
 async function eventIdFor(ctx, eventUuid) {
     if (!eventUuid) return null;
@@ -23,34 +25,52 @@ async function eventIdFor(ctx, eventUuid) {
 }
 
 const GateService = {
-    async scan(ctx, { code, gate, eventId } = {}) {
+    async scan(ctx, { code, gate, eventId, method } = {}) {
         const raw = String(code || '').trim().slice(0, 200);
         if (!raw) bad('Scan or type a ticket code');
+        // A signed QR always starts with T1.; anything else typed by hand is treated as the 10-character entry code.
+        const byCode = method === 'code' || !raw.startsWith('T1.');
         const gateName = String(gate || 'Gate 1').trim().slice(0, 80);
         const filterEvent = await eventIdFor(ctx, eventId);
         const now = new Date();
         const log = (result, t = null) => TicketScan.create({
             ticket_id: t?.id || null, event_id: t?.event_id || (filterEvent > 0 ? filterEvent : null), merchant_id: t?.merchant_id || ctx.merchantId,
-            code_fingerprint: Hasher.fingerprint(raw), gate_id: t?.gate_id || null, gate_name: gateName, result, user_id: ctx.user.id,
+            code_fingerprint: Hasher.fingerprint(raw), gate_id: t?.gate_id || null, gate_name: gateName, result, method: byCode ? 'code' : 'qr', user_id: ctx.user.id,
             device_hash: ctx.deviceHash || null, ip: ctx.ip ? IpResolver.toBinary(ctx.ip) : null, request_id: ctx.requestId || null, scanned_at: now,
         });
         const out = (status, t = null, extra = {}) => ({
-            status, code: t ? TicketSigner.shortCode(t.uuid) : raw.slice(0, 24),
+            status, code: t ? TicketSigner.shortCode(t.uuid) : (byCode ? '' : raw.slice(0, 24)), method: byCode ? 'code' : 'qr',
             ...(t ? { ticket: { label: t.label, scannedAt: t.scanned_at, gate: t.gate_name || null }, booking: { event: { title: t.event_title }, contact: { name: t.contact_name } } } : {}),
             ...extra,
         });
 
-        const parsed = TicketSigner.verify(raw);
-        if (!parsed) {
-            await log('invalid');
-            SecurityEventService.record(ctx, 'invalid_ticket_scan', { details: { gate: gateName, reason: 'signature' } });
-            return out('invalid', null, { message: 'Not a valid Ticketo ticket' });
+        const lookup = () => DB.table('tickets as t').join('orders as o', 'o.id', '=', 't.order_id').join('events as e', 'e.id', '=', 'o.event_id')
+            .leftJoin('event_shows as s', 's.id', '=', 'o.show_id').select(...TICKET_COLUMNS);
+        let parsed; let t;
+        if (byCode) {
+            // Typed entry code: capped attempts, then a keyed-hash lookup limited to this organiser's tickets.
+            const since = new Date(now.getTime() - 60e3);
+            const recent = await TicketScan.where('user_id', ctx.user.id).where('method', 'code').where('result', 'invalid').where('scanned_at', '>', since).count();
+            if (Number(recent) >= CODE_ATTEMPTS_PER_MIN) tooMany('Too many wrong codes. Wait a minute, or scan the QR instead.', 'rate_limited');
+            const norm = TicketSigner.normalizeEntry(raw);
+            if (!norm) { await log('invalid'); return out('invalid', null, { message: 'Enter the 10-character code printed under the QR' }); }
+            t = await lookup().where('t.entry_code_hash', TicketSigner.hashTyped(norm)).where('o.merchant_id', ctx.merchantId).first();
+            if (!t) {
+                await log('invalid');
+                SecurityEventService.record(ctx, 'invalid_ticket_scan', { details: { gate: gateName, reason: 'entry_code' } });
+                return out('invalid', null, { message: 'Code not recognised' });
+            }
+            parsed = { uuid: t.uuid, version: t.version }; // the hash is tied to the current version
+        } else {
+            parsed = TicketSigner.verify(raw);
+            if (!parsed) {
+                await log('invalid');
+                SecurityEventService.record(ctx, 'invalid_ticket_scan', { details: { gate: gateName, reason: 'signature' } });
+                return out('invalid', null, { message: 'Not a valid Ticketo ticket' });
+            }
+            t = await lookup().where('t.uuid', parsed.uuid).first();
+            if (!t) { await log('invalid'); return out('invalid', null, { message: 'Ticket not found' }); }
         }
-        const t = await DB.table('tickets as t').join('orders as o', 'o.id', '=', 't.order_id').join('events as e', 'e.id', '=', 'o.event_id')
-            .leftJoin('event_shows as s', 's.id', '=', 'o.show_id')
-            .select('t.id', 't.uuid', 't.label', 't.version', 't.status', 't.scanned_at', 'o.status as order_status', 'o.merchant_id', 'o.event_id', 'o.contact_name', 'e.title as event_title', 's.venue_id')
-            .where('t.uuid', parsed.uuid).first();
-        if (!t) { await log('invalid'); return out('invalid', null, { message: 'Ticket not found' }); }
         if (t.merchant_id !== ctx.merchantId) {
             await log('invalid');
             SecurityEventService.record(ctx, 'invalid_ticket_scan', { details: { gate: gateName, reason: 'other_merchant' } });

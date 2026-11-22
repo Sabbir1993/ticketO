@@ -20,18 +20,22 @@ const TYPES = {
     'image/webp': { ext: 'webp', magic: (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP' },
 };
 const CLAIM_WINDOW_MS = 24 * 3600000;
+const PUBLIC_PURPOSES = ['merchant_logo', 'merchant_banner'];
 const root = () => base_path('storage/app/private');
 const aad = (id) => `media:${id}`;
 const cleanName = (n) => path.basename(String(n || 'document')).replace(/[^\w.\- ()]/g, '_').slice(0, 120) || 'document';
 
 const MediaService = {
-    async upload(ctx, { name, type, dataUrl } = {}, { purpose = 'kyc' } = {}) {
-        const t = TYPES[type] || bad('Only PDF, JPG, PNG or WEBP files');
+    // `images: true` limits the upload to JPG/PNG/WEBP and `visibility: 'public'` marks it servable at GET /api/media/:uuid
+    // (merchant logo / banner only — the bytes are still encrypted at rest and decrypted when served).
+    async upload(ctx, { name, type, dataUrl } = {}, { purpose = 'kyc', visibility = 'private', images = false, maxBytes = MAX_BYTES } = {}) {
+        const t = (images ? ['image/jpeg', 'image/png', 'image/webp'].includes(type) && TYPES[type] : TYPES[type]) || bad(images ? 'Only JPG, PNG or WEBP images' : 'Only PDF, JPG, PNG or WEBP files');
+        const limitText = `Max ${Math.round(maxBytes / 1048576)} MB per file`;
         const m = String(dataUrl || '').match(/^data:([\w/+.-]+);base64,([A-Za-z0-9+/=\s]+)$/);
         if (!m || m[1] !== type) bad('The file could not be read — please choose it again');
-        if (m[2].length > Math.ceil((MAX_BYTES * 4) / 3) + 8) bad('Max 5 MB per file');
+        if (m[2].length > Math.ceil((maxBytes * 4) / 3) + 8) bad(limitText);
         const buf = Buffer.from(m[2], 'base64');
-        if (!buf.length || buf.length > MAX_BYTES) bad('Max 5 MB per file');
+        if (!buf.length || buf.length > maxBytes) bad(limitText);
         if (!t.magic(buf)) bad('The file content does not match its type');
 
         const id = uuid();
@@ -40,11 +44,21 @@ const MediaService = {
         const { ciphertext, keyVersion } = Envelope.encrypt(buf.toString('base64'), aad(id));
         await fs.writeFile(path.join(root(), rel), JSON.stringify({ v: 1, kv: keyVersion, c: ciphertext }), { mode: 0o600 });
         await Media.create({
-            uuid: id, disk: 'private', path: rel.replace(/\\/g, '/'), visibility: 'private', original_name: cleanName(name), mime: type, bytes: buf.length,
+            uuid: id, disk: 'private', path: rel.replace(/\\/g, '/'), visibility, original_name: cleanName(name), mime: type, bytes: buf.length,
             checksum: crypto.createHash('sha256').update(buf).digest('hex'), purpose, uploaded_by: ctx.user?.id || null, merchant_id: ctx.merchantId || null,
         });
         return { fileId: id, name: cleanName(name), type, size: buf.length };
     },
+
+    /** Public brand image by uuid (logo / banner only). Anything else, or a deleted file, is "not found". */
+    async readPublic(id) {
+        const m = await Media.select('id', 'visibility', 'purpose').where('uuid', String(id)).first();
+        if (!m || m.visibility !== 'public' || !PUBLIC_PURPOSES.includes(m.purpose)) missing('File not found');
+        return MediaService.read(m.id);
+    },
+
+    /** Soft-delete a media row (the encrypted file stays for audit; it is no longer served). */
+    async discard(mediaId) { if (mediaId) await Media.where('id', mediaId).delete(); },
 
     /** Resolve uploads the current actor may attach (fresh, unattached, same uploader). */
     async claimable(ctx, fileIds, { purpose = 'kyc' } = {}) {

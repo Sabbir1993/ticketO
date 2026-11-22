@@ -3,7 +3,7 @@ const SoftDeletes = use('laranode/Database/Loquent/SoftDeletes');
 
 class Merchant extends SoftDeletes(Model) {
     static table = 'merchants';
-    static fillable = ['uuid', 'name', 'slug', 'business_type', 'status', 'status_note', 'commission_pct', 'legal_name', 'trade_license', 'tin', 'bin', 'address', 'website', 'contact_name', 'contact_email', 'contact_phone', 'logo_media_id', 'pg_mode', 'kyc_status', 'kyc_submitted_at', 'kyc_reviewed_at', 'kyc_reviewed_by', 'kyc_note', 'settlement_cycle'];
+    static fillable = ['uuid', 'name', 'slug', 'business_type', 'status', 'status_note', 'commission_pct', 'legal_name', 'trade_license', 'tin', 'bin', 'address', 'website', 'contact_name', 'contact_email', 'contact_phone', 'logo_media_id', 'banner_media_id', 'tagline', 'about', 'brand_primary', 'brand_accent', 'pg_mode', 'kyc_status', 'kyc_submitted_at', 'kyc_reviewed_at', 'kyc_reviewed_by', 'kyc_note', 'settlement_cycle'];
 
     users() { return this.hasMany(use('App/Models/User'), 'merchant_id'); }
     events() { return this.hasMany(use('App/Models/Event'), 'merchant_id'); }

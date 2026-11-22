@@ -4,6 +4,7 @@ const RbacService = use('App/Services/RbacService');
 const MerchantAccountService = use('App/Services/MerchantAccountService');
 const MerchantEventService = use('App/Services/MerchantEventService');
 const MerchantReportService = use('App/Services/MerchantReportService');
+const MerchantBrandService = use('App/Services/MerchantBrandService');
 
 // Merchant portal. Every route: merchant staff session + MerchantScope + a permission (routes/api.js).
 // Responses are never cached (buyer contacts, account details).
@@ -22,9 +23,20 @@ class MerchantController extends Controller {
     async paymentSettings(req, res) { return json(res, await MerchantAccountService.updatePaymentSettings(req.ctx, req.only(['sslcommerz', 'bkash']))); }
     async testPayment(req, res) { return json(res, await MerchantAccountService.testConnection(req.ctx, req.only(['gateway']))); }
 
+    async brand(req, res) { return json(res, await MerchantBrandService.get(req.ctx)); }
+    async saveBrand(req, res) { return json(res, await MerchantBrandService.save(req.ctx, req.only(['tagline', 'about', 'primary', 'accent']))); }
+    async brandImage(req, res) { return json(res, await MerchantBrandService.setImage(req.ctx, req.input('kind'), req.only(['name', 'type', 'dataUrl']))); }
+    async clearBrandImage(kind, req, res) { return json(res, await MerchantBrandService.clearImage(req.ctx, kind)); }
+
     async dashboard(req, res) { return json(res, await MerchantReportService.dashboard(req.ctx)); }
     async orders(req, res) { return json(res, await MerchantReportService.orders(req.ctx, { eventId: req.query('eventId') })); }
     async settlement(req, res) { return json(res, await MerchantReportService.settlement(req.ctx)); }
+    async payout(req, res) { return json(res, await MerchantReportService.payoutSummary(req.ctx, { from: req.query('from'), to: req.query('to') })); }
+    async payoutCsv(req, res) {
+        const csv = await MerchantReportService.payoutCsv(req.ctx, { from: req.query('from'), to: req.query('to') });
+        res.header('Content-Type', 'text/csv; charset=utf-8'); res.header('Content-Disposition', 'attachment; filename="sales-and-payout.csv"'); res.header('Cache-Control', 'no-store');
+        return res.status(200).send(csv);
+    }
 
     async events(req, res) { return json(res, await MerchantEventService.list(req.ctx)); }
     async event(id, req, res) { return json(res, await MerchantEventService.get(req.ctx, id)); }

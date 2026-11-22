@@ -33,8 +33,8 @@ class ReferenceSeeder extends Seeder {
         for (const [i, [slug, name, popular, def, online]] of R.cities.entries()) {
             await ins('cities', { slug, name, icon: online ? 'Globe' : 'MapPin', is_popular: popular ? 1 : 0, is_default: def ? 1 : 0, is_online: online ? 1 : 0, sort_order: i, ...ts });
         }
-        for (const [i, [code, name, subtitle, icon, color, gateway, mcn]] of R.paymentMethods.entries()) {
-            await ins('payment_methods', { code, name, subtitle, icon, color, gateway, multi_card_name: mcn || null, channel: 'online', sort_order: i, is_enabled: 1, ...ts });
+        for (const [i, [code, name, subtitle, icon, color, gateway, mcn, group, enabled]] of R.paymentMethods.entries()) {
+            await ins('payment_methods', { code, name, subtitle, icon, color, method_group: group || 'other', gateway, multi_card_name: mcn || null, channel: 'online', sort_order: i, is_enabled: enabled === 0 ? 0 : 1, ...ts });
         }
         // Gateway flags only — secrets are entered in CMS → Payment gateways (stored encrypted).
         await ins('gateway_settings', { gateway: 'sslcommerz', is_enabled: 1, sandbox: 1, ...ts });

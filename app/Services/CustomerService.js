@@ -15,6 +15,7 @@ const AuditService = use('App/Services/AuditService');
 const UserView = use('App/Services/UserView');
 const Access = use('App/Support/Access');
 const Hasher = use('App/Security/Hasher');
+const TicketSigner = use('App/Security/TicketSigner');
 const { bad, forbid } = use('App/Support/HttpError');
 
 const HIDDEN_STATES = ['pending_payment', 'expired', 'failed', 'cancelled'];
@@ -107,6 +108,8 @@ const CustomerService = {
             }))) bad('This booking cannot be transferred');
             await OrderTransfer.create({ order_id: o.id, from_name: o.contact_name, from_phone: o.contact_phone, to_name: toName, to_phone: toPhone, transferred_by: ctx.user.id, transferred_at: now });
             await Ticket.where('order_id', o.id).increment('version');
+            // The manual entry code follows the version: old code stops working with the old QR.
+            for (const t of await Ticket.select('id', 'uuid', 'version').where('order_id', o.id).get()) await Ticket.where('id', t.id).update({ entry_code_hash: TicketSigner.entryHash(t.uuid, t.version) });
             // The buying browser's holder cookie no longer opens this booking.
             // (a hash of a random token nobody holds — the column is NOT NULL)
             if (o.hold_id) await SeatHold.where('id', o.hold_id).update({ owner_hash: Hasher.hash(Hasher.token(32), 'holder'), updated_at: now });
